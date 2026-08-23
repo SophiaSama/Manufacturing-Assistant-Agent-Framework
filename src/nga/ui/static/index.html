@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NGA Manufacturing Assistant | Decision Support System</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header Navigation -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="brand-logo">
+          <span class="logo-icon">⚙️</span>
+          <div class="brand-text">
+            <span class="brand-plant">Apex Automotive • Northgate Assembly</span>
+            <span class="brand-app">NGA Manufacturing Assistant</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-nav">
+        <button class="nav-tab active" data-tab="chat">
+          <span class="tab-icon">💬</span> Chat & Decisions
+        </button>
+        <button class="nav-tab" data-tab="hil">
+          <span class="tab-icon">🛡️</span> HIL Approvals
+          <span class="badge badge-pending" id="hil-counter" style="display: none;">0</span>
+        </button>
+        <button class="nav-tab" data-tab="logs">
+          <span class="tab-icon">📜</span> System Logs
+        </button>
+        <button class="nav-tab" data-tab="eval">
+          <span class="tab-icon">📊</span> Evaluation Runner
+        </button>
+        <button class="nav-tab" data-tab="compare">
+          <span class="tab-icon">⚖️</span> Compare Evaluations
+        </button>
+        <button class="nav-tab" data-tab="roles">
+          <span class="tab-icon">👤</span> RBAC Roles
+        </button>
+      </div>
+
+      <div class="header-right">
+        <div class="system-status-indicator" id="system-status" title="System Connected">
+          <span class="status-dot"></span>
+          <span class="status-text" id="status-env">Cloud</span>
+        </div>
+
+        <div class="role-selector-widget">
+          <span class="role-label">Active Role:</span>
+          <div class="role-dropdown-container">
+            <button class="role-badge-btn" id="active-role-badge">
+              <span class="role-icon" id="role-icon">👷</span>
+              <span class="role-name" id="role-name-display">OPERATOR</span>
+              <span class="role-level-tag" id="role-level-display">L1</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Body -->
+    <main class="main-content">
+
+      <!-- TAB 1: CHAT & DECISION ASSISTANT -->
+      <section class="tab-pane active" id="pane-chat">
+        <div class="chat-layout">
+          <!-- Left: Conversation Stream -->
+          <div class="chat-main-area">
+            <div class="role-banner" id="chat-role-banner">
+              <div class="role-banner-info">
+                <span class="banner-badge" id="banner-role-tag">OPERATOR CLEARANCE</span>
+                <span class="banner-desc" id="banner-role-desc">Assembly procedures, torque specifications, and operator SOPs.</span>
+              </div>
+              <button class="btn btn-sm btn-outline" id="btn-quick-switch-role">Switch Role</button>
+            </div>
+
+            <div class="chat-messages-container" id="chat-messages">
+              <!-- Welcome greeting -->
+              <div class="message-card message-system">
+                <div class="msg-avatar">🤖</div>
+                <div class="msg-body">
+                  <div class="msg-author">NGA Manufacturing Assistant</div>
+                  <div class="msg-prose">
+                    Welcome to the Northgate Assembly Decision Support Assistant. I am grounded in plant SOPs, torque databases, failure analysis records (FAP-401), and recall safety criteria (QCR-501). How can I assist you with assembly or quality today?
+                  </div>
+                  <div class="quick-prompts-container">
+                    <span class="qp-label">Suggested queries:</span>
+                    <div class="qp-list">
+                      <button class="qp-chip" data-query="What is the wheel lug nut torque target at Station 144?">Wheel lug torque at Station 144</button>
+                      <button class="qp-chip" data-query="What is the brake bleed sequence?">Brake bleed sequence</button>
+                      <button class="qp-chip" data-query="How many vehicles were built on 2025-04-08 Shift C?">Shift C production count (SQL)</button>
+                      <button class="qp-chip" data-query="A torque audit at Station 168 finds one lug nut at 111.0 Nm on NGA-AU25-0037. What is the process?">Torque audit anomaly & containment</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Chat Input Box -->
+            <div class="chat-input-bar">
+              <div class="input-wrapper">
+                <textarea id="chat-input" placeholder="Ask a question about SOPs, machines, torque specs, NC records, or recall evaluation..." rows="1"></textarea>
+                <button class="btn btn-primary" id="btn-send-chat">
+                  <span>Send</span>
+                  <span class="send-icon">➤</span>
+                </button>
+              </div>
+              <div class="input-meta">
+                <span class="input-hint">Press <strong>Enter</strong> to send, <strong>Shift+Enter</strong> for newline</span>
+                <span class="active-clearance" id="input-clearance-hint">Role: Operator (Access Level 1)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Realtime Trace & Node Inspector -->
+          <div class="chat-sidebar">
+            <div class="sidebar-header">
+              <span class="sidebar-title">⚡ Execution Trace</span>
+              <button class="btn-icon" id="btn-clear-trace" title="Clear trace">🔄</button>
+            </div>
+            <div class="trace-feed" id="trace-feed">
+              <div class="trace-empty-state">
+                <p>Execution lifecycle steps (prepare, agent, tools, synthesis, hitl) and executed SQL/SOP queries will appear here.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: HIL APPROVAL QUEUE -->
+      <section class="tab-pane" id="pane-hil">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">🛡️ Human-In-The-Loop Safety Gate</h2>
+              <p class="pane-subtitle">Review, approve, or reject safety-critical manufacturing actions and recall escalation recommendations.</p>
+            </div>
+            <div class="pane-actions">
+              <div class="btn-group">
+                <button class="btn btn-sm btn-filter active" data-filter="all">All</button>
+                <button class="btn btn-sm btn-filter" data-filter="pending">Pending</button>
+                <button class="btn btn-sm btn-filter" data-filter="approved">Approved</button>
+                <button class="btn btn-sm btn-filter" data-filter="rejected">Rejected</button>
+              </div>
+              <button class="btn btn-sm btn-outline" id="btn-refresh-decisions">🔄 Refresh</button>
+            </div>
+          </div>
+
+          <div class="decisions-list-container" id="decisions-container">
+            <div class="loading-spinner">Loading decision records...</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: SYSTEM & AGENT LOGS -->
+      <section class="tab-pane" id="pane-logs">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">📜 Central System & Tool Logs</h2>
+              <p class="pane-subtitle">Live logging buffer capturing graph routing, tool executions, and safety audits.</p>
+            </div>
+            <div class="pane-actions">
+              <select id="log-level-filter" class="select-sm">
+                <option value="">All Log Levels</option>
+                <option value="INFO">INFO only</option>
+                <option value="WARNING">WARNING only</option>
+                <option value="ERROR">ERROR only</option>
+              </select>
+              <button class="btn btn-sm btn-outline" id="btn-refresh-logs">🔄 Refresh</button>
+              <button class="btn btn-sm btn-outline" id="btn-clear-logs-view">Clear View</button>
+            </div>
+          </div>
+
+          <div class="log-terminal" id="log-terminal">
+            <div class="log-terminal-content" id="log-records-container">
+              <!-- Logs injected here -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: EVALUATION RUNNER -->
+      <section class="tab-pane" id="pane-eval">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">📊 Evaluation Benchmark Suite</h2>
+              <p class="pane-subtitle">Execute deterministic and multi-hop benchmark tests against the 75-question synthetic corpus.</p>
+            </div>
+          </div>
+
+          <div class="eval-grid">
+            <!-- Eval Config Card -->
+            <div class="card eval-config-card">
+              <h3 class="card-title">Run Configuration</h3>
+              <form id="eval-run-form">
+                <div class="form-group">
+                  <label for="eval-category">Test Category / Suite</label>
+                  <select id="eval-category" class="form-control">
+                    <option value="all">Full Suite (All Categories)</option>
+                    <option value="retrieval">Retrieval QA (R1–R30)</option>
+                    <option value="multi-hop">Multi-Hop Reasoning (M1–M12)</option>
+                    <option value="scenario">Manufacturing Scenarios (S1–S8)</option>
+                    <option value="escalation-recall">Escalation & Recall Criteria (E1–E10)</option>
+                    <option value="sql">SQL Database Queries (SQL1–SQL15)</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="eval-mode-type">Execution Scope</label>
+                  <select id="eval-mode-type" class="form-control">
+                    <option value="smoke">Quick Smoke Test (5 Representative Questions)</option>
+                    <option value="limited">Limited Count (First 10 Questions)</option>
+                    <option value="full">Full Category / Suite</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label for="eval-custom-label">Run Label (Optional)</label>
+                  <input type="text" id="eval-custom-label" class="form-control" placeholder="e.g. baseline_v1, claude_sonnet_test">
+                </div>
+
+                <div class="form-group">
+                  <label for="eval-role">Execution Clearance Role</label>
+                  <select id="eval-role" class="form-control">
+                    <option value="manager" selected>Manager (Level 4 - Full Clearance)</option>
+                    <option value="engineer">Engineer (Level 3)</option>
+                  </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block" id="btn-start-eval">
+                  🚀 Launch Evaluation Run
+                </button>
+              </form>
+            </div>
+
+            <!-- Eval Progress & Current Run Summary -->
+            <div class="card eval-results-card">
+              <h3 class="card-title" id="eval-results-title">Benchmark Results</h3>
+              
+              <div id="eval-placeholder" class="eval-placeholder">
+                <div class="placeholder-icon">🎯</div>
+                <p>Configure a benchmark run on the left and click "Launch Evaluation Run".</p>
+              </div>
+
+              <div id="eval-progress-box" class="eval-progress-box" style="display: none;">
+                <div class="progress-header">
+                  <span id="eval-progress-status">Running evaluation...</span>
+                  <span id="eval-progress-counts">0 / 0</span>
+                </div>
+                <div class="progress-bar-track">
+                  <div class="progress-bar-fill" id="eval-progress-bar" style="width: 0%;"></div>
+                </div>
+              </div>
+
+              <div id="eval-summary-content" style="display: none;">
+                <!-- Summary cards -->
+                <div class="metric-cards-row" id="eval-metric-cards"></div>
+
+                <!-- Category Breakdown Table -->
+                <h4 class="section-subtitle">Performance by Category</h4>
+                <div class="table-responsive">
+                  <table class="data-table" id="eval-category-table">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Total</th>
+                        <th>Passed</th>
+                        <th>Pass Rate</th>
+                        <th>Avg Score</th>
+                        <th>Avg Latency</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+
+                <!-- Download/View report link -->
+                <div class="report-meta-box" id="eval-report-meta"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: COMPARE EVALUATIONS -->
+      <section class="tab-pane" id="pane-compare">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">⚖️ Evaluation Comparison Studio</h2>
+              <p class="pane-subtitle">Compare performance between two evaluation runs (Baseline vs Candidate) with regression and improvement analysis.</p>
+            </div>
+          </div>
+
+          <!-- Run Selection Bar -->
+          <div class="card compare-selector-card">
+            <div class="compare-selector-grid">
+              <div class="selector-col">
+                <label class="form-label" for="select-run-a">Run A (Baseline):</label>
+                <select id="select-run-a" class="form-control"></select>
+              </div>
+              <div class="selector-col vs-col">
+                <span class="vs-badge">VS</span>
+              </div>
+              <div class="selector-col">
+                <label class="form-label" for="select-run-b">Run B (Candidate):</label>
+                <select id="select-run-b" class="form-control"></select>
+              </div>
+              <div class="selector-col btn-col">
+                <button class="btn btn-primary" id="btn-compare-evals">Compare Runs</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Comparison Display -->
+          <div id="compare-results-wrapper" style="display: none;">
+            <!-- Overall Metric Delta Cards -->
+            <div class="delta-cards-grid" id="compare-delta-cards"></div>
+
+            <!-- Transition Statistics (Regressions / Improvements) -->
+            <div class="transition-summary-bar" id="transition-summary"></div>
+
+            <!-- Category Comparison Table -->
+            <div class="card mb-4">
+              <h3 class="card-title">Category Performance Deltas</h3>
+              <div class="table-responsive">
+                <table class="data-table" id="compare-category-table">
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      <th>Pass Rate (A)</th>
+                      <th>Pass Rate (B)</th>
+                      <th>Pass Rate Δ</th>
+                      <th>Score (A)</th>
+                      <th>Score (B)</th>
+                      <th>Score Δ</th>
+                      <th>Latency Δ</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Question Matrix Filter & List -->
+            <div class="card">
+              <div class="card-header-flex">
+                <h3 class="card-title">Question-Level Breakdown</h3>
+                <div class="btn-group" id="question-status-filters">
+                  <button class="btn btn-sm btn-filter active" data-qfilter="all">All</button>
+                  <button class="btn btn-sm btn-filter" data-qfilter="regression">🔻 Regressions</button>
+                  <button class="btn btn-sm btn-filter" data-qfilter="improvement">🔺 Improvements</button>
+                  <button class="btn btn-sm btn-filter" data-qfilter="maintained_pass">✅ Maintained Pass</button>
+                  <button class="btn btn-sm btn-filter" data-qfilter="maintained_fail">❌ Maintained Fail</button>
+                </div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="data-table" id="compare-questions-table">
+                  <thead>
+                    <tr>
+                      <th>Question ID</th>
+                      <th>Category</th>
+                      <th>Status Transition</th>
+                      <th>Score A → B</th>
+                      <th>Latency A → B</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: RBAC ROLES & PERMISSIONS -->
+      <section class="tab-pane" id="pane-roles">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">👤 Role-Based Access Control (RBAC)</h2>
+              <p class="pane-subtitle">NGA security model: 4-tier clearance hierarchy with server-side document segregation.</p>
+            </div>
+          </div>
+
+          <div class="roles-grid" id="roles-cards-container">
+            <!-- Injected via JavaScript -->
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- HIL Approval / Rejection Modal -->
+  <div class="modal-overlay" id="hil-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="hil-modal-title">🛡️ Safety Action Decision Gate</h3>
+        <button class="modal-close" id="btn-close-hil-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="hil-modal-banner" class="alert-banner mb-3" style="display: none;"></div>
+
+        <div class="decision-meta-row">
+          <div class="meta-item">
+            <span class="meta-label">Decision ID:</span>
+            <span class="meta-value" id="hil-modal-id">#12</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Category:</span>
+            <span class="meta-value" id="hil-modal-cat">TORQUE</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Originating Role:</span>
+            <span class="meta-value" id="hil-modal-role">OPERATOR</span>
+          </div>
+        </div>
+
+        <div class="recommendation-box mb-3">
+          <label class="meta-label">Recommendation to Authorize:</label>
+          <div class="recommendation-text" id="hil-modal-rec"></div>
+        </div>
+
+        <div class="form-group mb-3">
+          <label for="hil-approver-input">Approver Name / Employee ID <span class="text-danger" id="approver-required-indicator">*</span></label>
+          <input type="text" id="hil-approver-input" class="form-control" placeholder="e.g. John Doe (ENG-4402)">
+        </div>
+
+        <div class="form-group mb-3">
+          <label for="hil-reason-input">Justification / Rejection Reason <span class="text-muted" id="reason-required-indicator">(Required for Class A rejection)</span></label>
+          <textarea id="hil-reason-input" class="form-control" rows="3" placeholder="Enter engineering justification or containment instructions..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="btn-cancel-hil">Cancel</button>
+        <button class="btn btn-danger" id="btn-reject-hil">❌ Reject Action</button>
+        <button class="btn btn-success" id="btn-approve-hil">✅ Authorize Action</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role Login Modal -->
+  <div class="modal-overlay" id="role-login-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">Select User Role & Clearance</h3>
+        <button class="modal-close" id="btn-close-role-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-3">Choose your operational role to configure system prompt guidance and document access clearances:</p>
+        <div class="role-options-list" id="role-options-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

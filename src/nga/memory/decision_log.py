@@ -87,3 +87,64 @@ def update_decision(
         con.commit()
     finally:
         con.close()
+
+
+def get_decisions(
+    db_path: str,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, object]]:
+    """Retrieve decision records from decisions_log table."""
+    con = _connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        if status:
+            cursor = con.execute(
+                """
+                SELECT id, question, recommendation, category, user_role,
+                       class_a_alert, escalation_level, status, approver,
+                       created_at, updated_at
+                FROM decisions_log
+                WHERE status = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (status, limit),
+            )
+        else:
+            cursor = con.execute(
+                """
+                SELECT id, question, recommendation, category, user_role,
+                       class_a_alert, escalation_level, status, approver,
+                       created_at, updated_at
+                FROM decisions_log
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        con.close()
+
+
+def get_decision_by_id(db_path: str, decision_id: int) -> dict[str, object] | None:
+    """Retrieve a single decision record by ID."""
+    con = _connect(db_path)
+    con.row_factory = sqlite3.Row
+    try:
+        cursor = con.execute(
+            """
+            SELECT id, question, recommendation, category, user_role,
+                   class_a_alert, escalation_level, status, approver,
+                   created_at, updated_at
+            FROM decisions_log
+            WHERE id = ?
+            """,
+            (decision_id,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        con.close()
+
