@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+
+# Environment / secrets
+.env
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Data / generated artifacts (not source-controlled)
+data/
+reports/
+
+# Evaluation ground truth (excluded from agent corpus, not committed)
+# ground-truth.md is intentionally NOT committed to prevent leakage

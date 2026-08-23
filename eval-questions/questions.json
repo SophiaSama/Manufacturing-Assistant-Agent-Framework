@@ -1,0 +1,845 @@
+{
+  "corpus": "Northgate Assembly Plant (NGA) synthetic manufacturing corpus",
+  "description": "Eval questions for manufacturing agent framework. Ground truth in expected_answer; source_docs point into corpus.",
+  "count": 75,
+  "questions": [
+    {
+      "id": "R1",
+      "category": "retrieval",
+      "question": "What is the wheel lug nut torque target at Station 144?",
+      "expected_answer": "105 Nm \u00b1 5% (99.75\u2013110.25 Nm)",
+      "source_docs": [
+        "SOP-OPR-101"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R2",
+      "category": "retrieval",
+      "question": "In what sequence are lug nuts tightened?",
+      "expected_answer": "Star: 1\u21923\u21925\u21922\u21924",
+      "source_docs": [
+        "SOP-OPR-101"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R3",
+      "category": "retrieval",
+      "question": "What is the torque audit frequency at final inspection?",
+      "expected_answer": "Every 2 hours, 3 consecutive vehicles",
+      "source_docs": [
+        "SOP-OPR-158"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R4",
+      "category": "retrieval",
+      "question": "What tool is used for the torque audit?",
+      "expected_answer": "TQ-6018 (TorqMaster TF-6000, calibrated weekly)",
+      "source_docs": [
+        "SOP-OPR-158"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R5",
+      "category": "retrieval",
+      "question": "What is the windshield adhesive bead dimension?",
+      "expected_answer": "8 mm \u00b1 1 mm base, 12 mm \u00b1 1 mm height",
+      "source_docs": [
+        "SOP-OPR-114"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R6",
+      "category": "retrieval",
+      "question": "What is the minimum windshield adhesive cure time?",
+      "expected_answer": "4 hours at 20\u201325 \u00b0C (6 h below 15 \u00b0C)",
+      "source_docs": [
+        "SOP-OPR-114"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R7",
+      "category": "retrieval",
+      "question": "What is the windshield retention test threshold?",
+      "expected_answer": "> 1,200 N pull strength at 7 days cure",
+      "source_docs": [
+        "SOP-OPR-114"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R8",
+      "category": "retrieval",
+      "question": "What is the engine mount bolt tightening spec?",
+      "expected_answer": "62 Nm \u00b1 2 Nm + 90\u00b0 \u00b1 5\u00b0 (torque-to-yield)",
+      "source_docs": [
+        "SOP-OPR-127"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R9",
+      "category": "retrieval",
+      "question": "What is the rear transmission mount torque?",
+      "expected_answer": "45 Nm \u00b1 3 Nm",
+      "source_docs": [
+        "SOP-OPR-127"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R10",
+      "category": "retrieval",
+      "question": "What brake fluid is used and at what fill pressure?",
+      "expected_answer": "DOT 4 (ISO 4925 Class 6), 0.5\u20131.0 bar",
+      "source_docs": [
+        "SOP-OPR-142"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R11",
+      "category": "retrieval",
+      "question": "What is the brake bleed sequence?",
+      "expected_answer": "RR \u2192 RL \u2192 FR \u2192 FL",
+      "source_docs": [
+        "SOP-OPR-142"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R12",
+      "category": "retrieval",
+      "question": "What does error code E-4012 on RB-07 mean?",
+      "expected_answer": "Servo overcurrent, axis 1",
+      "source_docs": [
+        "SOP-TEC-201"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R13",
+      "category": "retrieval",
+      "question": "What does error code E-5023 on RB-07 mean?",
+      "expected_answer": "TCP deviation > 0.5 mm",
+      "source_docs": [
+        "SOP-TEC-201"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R14",
+      "category": "retrieval",
+      "question": "What is the electrode cap life limit?",
+      "expected_answer": "4,000 welds",
+      "source_docs": [
+        "TEC-301",
+        "SOP-TEC-201"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R15",
+      "category": "retrieval",
+      "question": "What is the TorqMaster TF-6000 torque range and accuracy?",
+      "expected_answer": "5\u2013150 Nm, \u00b11.5% of reading",
+      "source_docs": [
+        "TEC-314"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R16",
+      "category": "retrieval",
+      "question": "What is the torque tool calibration interval?",
+      "expected_answer": "3 months or 100,000 cycles",
+      "source_docs": [
+        "SOP-TEC-214",
+        "TEC-314"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R17",
+      "category": "retrieval",
+      "question": "What drift threshold flags a torque tool?",
+      "expected_answer": "> 2% between weekly self-checks",
+      "source_docs": [
+        "SOP-TEC-214"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R18",
+      "category": "retrieval",
+      "question": "What is CV-2's maximum speed and capacity?",
+      "expected_answer": "12 m/min, 36 pallets per lane",
+      "source_docs": [
+        "TEC-328"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R19",
+      "category": "retrieval",
+      "question": "What is the most common CV-2 jam cause?",
+      "expected_answer": "Weld spatter on photoelectric sensor PS-200-1",
+      "source_docs": [
+        "TEC-328",
+        "SOP-TEC-228"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R20",
+      "category": "retrieval",
+      "question": "What is the clear coat film build target?",
+      "expected_answer": "45 \u00b5m (acceptance 40\u201352 \u00b5m)",
+      "source_docs": [
+        "TEC-342"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R21",
+      "category": "retrieval",
+      "question": "What is the paint robot atomizer speed?",
+      "expected_answer": "Up to 40,000 rpm (65 mm bell)",
+      "source_docs": [
+        "TEC-342"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R22",
+      "category": "retrieval",
+      "question": "What is the 8D verification period before closure?",
+      "expected_answer": "30 days or 1,000 units, whichever longer",
+      "source_docs": [
+        "FAP-401"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R23",
+      "category": "retrieval",
+      "question": "Who must approve 8D closure?",
+      "expected_answer": "Plant Manager",
+      "source_docs": [
+        "FAP-401"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R24",
+      "category": "retrieval",
+      "question": "What are the four escalation response-time targets?",
+      "expected_answer": "L1 \u226430 min, L2 \u22642 h, L3 \u22648 h, L4 \u226424 h",
+      "source_docs": [
+        "ESC-402"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R25",
+      "category": "retrieval",
+      "question": "Within what time must the Quality Director be notified of a Class A defect?",
+      "expected_answer": "1 hour",
+      "source_docs": [
+        "ESC-402",
+        "QCR-501"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R26",
+      "category": "retrieval",
+      "question": "What are the recall trigger defect-rate thresholds?",
+      "expected_answer": ">0.5% safety-related, >2% functional",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R27",
+      "category": "retrieval",
+      "question": "How many identical complaints in 30 days trigger evaluation?",
+      "expected_answer": "3",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R28",
+      "category": "retrieval",
+      "question": "What affected-population size triggers evaluation?",
+      "expected_answer": "> 1,000 vehicles",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "R29",
+      "category": "retrieval",
+      "question": "How long do you have to notify NRSA?",
+      "expected_answer": "5 business days",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "R30",
+      "category": "retrieval",
+      "question": "Which systems are Class A (safety-critical)?",
+      "expected_answer": "Brakes, steering, airbags, seat belts, fuel, wheel retention, engine mounts, windshield retention",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "M1",
+      "category": "multi-hop",
+      "question": "A torque audit at Station 168 fails on 2 of 10 re-audited vehicles. What happens next and who is involved?",
+      "expected_answer": "Stop Stations 144/118, re-audit 10 vehicles, escalate to Process Engineering (ESC-402 Level 3, \u22648 h); open NC per FAP-401",
+      "source_docs": [
+        "SOP-OPR-158",
+        "ESC-402",
+        "FAP-401"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "M2",
+      "category": "multi-hop",
+      "question": "TQ-6012 reports a drift flag. Which documents govern what happens, and which station is affected?",
+      "expected_answer": "Tool auto-quarantined in CMMS (SOP-TEC-214); station 144 halts (SOP-OPR-101 \u00a74.1); recalibrate on CR-500; re-audit completed vehicles (SOP-OPR-158); specs in TEC-314",
+      "source_docs": [
+        "SOP-TEC-214",
+        "SOP-OPR-101",
+        "SOP-OPR-158",
+        "TEC-314"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "M3",
+      "category": "multi-hop",
+      "question": "Why would a CV-2 false jam alarm cause a weld quality problem at Station 51?",
+      "expected_answer": "Spatter jams sensor (TEC-328 \u00a76); repeated jams wear pallet datum pins >1 mm \u2192 body misalignment \u2192 RB-12 TCP deviation E-5023",
+      "source_docs": [
+        "TEC-328",
+        "SOP-TEC-228",
+        "SOP-TEC-201"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "M4",
+      "category": "multi-hop",
+      "question": "A weld robot hits its cap life limit mid-shift. What stops production and what must be done?",
+      "expected_answer": "Cell halts automatically at 4,000 welds (TEC-301); replace electrode cap CP-RX-7712, log in tool-life tracker (SOP-TEC-201 \u00a74.3)",
+      "source_docs": [
+        "TEC-301",
+        "SOP-TEC-201"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "M5",
+      "category": "multi-hop",
+      "question": "Vehicles built with TQ-6012 before the drift was caught \u2014 what determines whether they are affected?",
+      "expected_answer": "Re-audit vehicles since last verified audit (SOP-TEC-214 \u00a75); below-spec \u2192 quarantine + NC; 3+ vehicles \u2192 field-action evaluation (QCR-501 C3)",
+      "source_docs": [
+        "SOP-TEC-214",
+        "SOP-OPR-158",
+        "QCR-501"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "M6",
+      "category": "multi-hop",
+      "question": "Windshield retention fails the destructive lab test. What is the escalation and what recall criteria apply?",
+      "expected_answer": "Class A: immediate Level 4 notification (\u22641 h), stop-ship, 8D (FAP-401), NRSA within 5 business days, field-action eval per C1/C2 (QCR-501)",
+      "source_docs": [
+        "SOP-OPR-114",
+        "QCR-501",
+        "ESC-402",
+        "FAP-401"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "M7",
+      "category": "multi-hop",
+      "question": "The fill machine at Station 131 has a moisture reading of 1.8% in the reservoir. What actions are required?",
+      "expected_answer": "Maintenance drains/replaces fluid (spec \u22641.5%, SOP-OPR-142 \u00a75); verify with test kit; log in QDS",
+      "source_docs": [
+        "SOP-OPR-142"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "M8",
+      "category": "multi-hop",
+      "question": "Film build on clear coat drops to 38 \u00b5m for 3 consecutive bodies. What's the process?",
+      "expected_answer": "Stop line, inform Paint Shop supervisor, escalate Level 2 (SOP-TEC-235 \u00a74); open NC, 8D (FAP-401); diagnose PT-ROB-03 per P-122",
+      "source_docs": [
+        "SOP-TEC-235",
+        "TEC-342",
+        "FAP-401"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "M9",
+      "category": "multi-hop",
+      "question": "A second servo amplifier fails on RB-07 within 7 days of the first. What is special about this?",
+      "expected_answer": "Level 3 + parts-quality notification; supplier batch analysis per FAP-401; check parts lot traceability (SOP-TEC-201 \u00a75)",
+      "source_docs": [
+        "SOP-TEC-201",
+        "FAP-401"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "M10",
+      "category": "multi-hop",
+      "question": "You find 3 identical field complaints of wheel noise. Torque data shows 5 of 445 readings out of tolerance on Shift C (2025-04-08), all below spec; 2 more on Shift B (overtorque, 110.3/111.0 Nm). Which recall criteria apply?",
+      "expected_answer": "C3 met (3 complaints) \u2192 field-action evaluation. C2 met: Shift C rate 1.12% > 0.5% safety threshold. Shift B at 0.53% is overtorque (different mechanism) \u2014 separate evaluation",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "M11",
+      "category": "multi-hop",
+      "question": "Who must be involved in the decision to lift a stop-ship?",
+      "expected_answer": "Plant Manager + Quality Director jointly; only after root cause confirmed + PCA verified (FAP-401 D6)",
+      "source_docs": [
+        "ESC-402",
+        "QCR-501",
+        "FAP-401"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "M12",
+      "category": "multi-hop",
+      "question": "TQ-6018 reads 104 Nm on a nut TQ-6012 installed at 103 Nm. Both claim \u00b11.5%. Is this a conflict?",
+      "expected_answer": "No \u2014 both readings within overlapping \u00b11.5% measurement uncertainty (TEC-314); flag only if self-check drift >2%",
+      "source_docs": [
+        "TEC-314",
+        "SOP-TEC-214"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "S1",
+      "category": "scenario",
+      "question": "Shift C torque audit failure at final inspection (worst 96.8 Nm). Walk through containment, escalation, scoping, and recall evaluation.",
+      "expected_answer": "Stop-ship/containment; NC-2025-0137 Class A; L2\u2192L3 (re-audit 10; >1/10 fail) \u2192 L4 (Class A, \u22641 h); suspect population = 04-08 Shift C (9 in DB) + since last verified audit; check TQ-6012 drift, swap TQ-6019; 8D; QCR-501 C3 met, C2 rate 3/9=33% of shift population; NRSA clock 5 business days",
+      "source_docs": [
+        "SOP-OPR-158",
+        "SOP-TEC-214",
+        "ESC-402",
+        "FAP-401",
+        "QCR-501"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "S2",
+      "category": "scenario",
+      "question": "WQC sensor on RB-07 reports low weld quality on 6 of last 40 cycles (E-4031), 30 min before shift change.",
+      "expected_answer": "Check gas flow \u226512 l/min, dress/replace tip; if recurs 3x in 1 h \u2192 Level 2; handover: response clock does not reset",
+      "source_docs": [
+        "SOP-TEC-201",
+        "ESC-402"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "S3",
+      "category": "scenario",
+      "question": "Incoming DOT 4 lot at 2.1% moisture; Station 131 low on fluid. Can the station use it?",
+      "expected_answer": "No \u2014 moisture >1.5% spec; lot quarantined (SCAR-2025-007, APP-07); verify fill records; stop station rather than use unapproved fluid",
+      "source_docs": [
+        "SOP-OPR-142",
+        "APP-07",
+        "SCAR-2025-007"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "S4",
+      "category": "scenario",
+      "question": "Zone 2B CV-2 had 4 E-Stops this shift, all RC-04 (unknown).",
+      "expected_answer": ">3 RC-04/shift \u2192 escalate Level 2 (SOP-TEC-228 \u00a74); investigate sensors/spatter before restart; LOTO; log correct reason codes",
+      "source_docs": [
+        "SOP-TEC-228",
+        "TEC-328",
+        "ESC-402"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "S5",
+      "category": "scenario",
+      "question": "An audit at Station 168 finds one lug nut at 111.0 Nm (over 110.25 Nm) on NGA-AU25-0037. Everything else is in spec.",
+      "expected_answer": "Outside tolerance \u2192 defect; stop source station, re-audit 10 vehicles (SOP-OPR-158 \u00a75); overtorque = stud stretch risk \u2192 engineering disposition per FAP-401",
+      "source_docs": [
+        "SOP-OPR-101",
+        "SOP-OPR-158",
+        "FAP-401"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "S6",
+      "category": "scenario",
+      "question": "PT-ROB-03 shows P-122; last 2 bodies at 43/41 \u00b5m (within band).",
+      "expected_answer": "Purge, check 25 \u00b5m filter, pump self-test, recalibrate CAL-ST-04 (SOP-TEC-235 \u00a73.2); 41\u201343 \u00b5m within 40\u201352 band \u2192 no NC yet, monitor + document in CMMS",
+      "source_docs": [
+        "SOP-TEC-235",
+        "TEC-342"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "S7",
+      "category": "scenario",
+      "question": "Contractor assigned to Station 144 with no SOP-OPR-101 certification.",
+      "expected_answer": "Not authorized \u2014 station coverage requires certified operator (TR-2025-030); same as expired cert rule (E-3002)",
+      "source_docs": [
+        "TR-2025-030",
+        "SOP-OPR-101"
+      ],
+      "difficulty": "easy",
+      "requires_sql": false
+    },
+    {
+      "id": "S8",
+      "category": "scenario",
+      "question": "Ambient 13 \u00b0C; windshield installed 23:00, shift ends 06:00. When can the vehicle be handled?",
+      "expected_answer": "6 hours cure (below 15 \u00b0C winter protocol, SOP-OPR-114 \u00a74.4) \u2192 ready 05:00; never use the 4-hour rule at 13 \u00b0C",
+      "source_docs": [
+        "SOP-OPR-114"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E1",
+      "category": "escalation-recall",
+      "question": "One customer reports wheel separation at highway speed. No other reports.",
+      "expected_answer": "Stop-ship + Level 4 within 1 hour + NRSA evaluation. C1 alone is sufficient (OR-condition).",
+      "source_docs": [
+        "QCR-501",
+        "ESC-402"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "E2",
+      "category": "escalation-recall",
+      "question": "9 vehicles were built on 2025-04-08 Shift C; 3 of them show lug-nut torque below spec (worst 96.8 Nm, no failures yet).",
+      "expected_answer": "Field-action evaluation: C3 met (3 affected vehicles), C2 met (3/9 \u2248 33% of shift-C population > 0.5%). Quarantine, stop-ship until scope determined.",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E3",
+      "category": "escalation-recall",
+      "question": "Cosmetic orange peel on 5% of vehicles for a week.",
+      "expected_answer": "No recall \u2014 cosmetic = S3 severity, monitor only; C2 applies to safety/functional defects.",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E4",
+      "category": "escalation-recall",
+      "question": "Engine mount bolts loose on 15 vehicles during audit; no field failures.",
+      "expected_answer": "Stop-ship (Class A system); C4 not met but C2 likely; 8D mandatory.",
+      "source_docs": [
+        "QCR-501",
+        "FAP-401"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E5",
+      "category": "escalation-recall",
+      "question": "Brake pedal travel complaints: 2 in 60 days; suspect lot never used.",
+      "expected_answer": "No trigger (2 < 3 complaints); verify containment (SCAR-2025-007); monitor.",
+      "source_docs": [
+        "QCR-501",
+        "SCAR-2025-007"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E6",
+      "category": "escalation-recall",
+      "question": "Windshield detachment on 1 vehicle at 55 mph; adhesive void found.",
+      "expected_answer": "C1 met \u2014 immediate L4, stop-ship, NRSA within 5 business days; 100% retention test on population.",
+      "source_docs": [
+        "QCR-501",
+        "SOP-OPR-114"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "E7",
+      "category": "escalation-recall",
+      "question": "NRSA opens a formal inquiry about your torque data.",
+      "expected_answer": "C5 met regardless of internal rates \u2014 respond, freeze/verify torque data.",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E8",
+      "category": "escalation-recall",
+      "question": "Functional defect (radio noise) affects 2.5% of vehicles \u2014 300 units.",
+      "expected_answer": "C2 met (2% functional threshold); S2 \u2192 campaign likely; C2 sufficient (OR-condition).",
+      "source_docs": [
+        "QCR-501"
+      ],
+      "difficulty": "medium",
+      "requires_sql": false
+    },
+    {
+      "id": "E9",
+      "category": "escalation-recall",
+      "question": "4 identical wheel-bearing noise complaints from same lot in 20 days; torque data clean.",
+      "expected_answer": "C3 met \u2192 field-action evaluation; investigate bearing supplier lot via FAP-401.",
+      "source_docs": [
+        "QCR-501",
+        "FAP-401"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "E10",
+      "category": "escalation-recall",
+      "question": "Stop-ship active 3 days; root cause confirmed; PCA verified on 200 units.",
+      "expected_answer": "Cannot lift yet \u2014 PCA verification requires 30 days/1,000 units (FAP-401 D6) + joint approval.",
+      "source_docs": [
+        "QCR-501",
+        "FAP-401",
+        "ESC-402"
+      ],
+      "difficulty": "hard",
+      "requires_sql": false
+    },
+    {
+      "id": "SQL1",
+      "category": "sql",
+      "question": "How many vehicles were built on 2025-04-08 Shift C?",
+      "expected_answer": "9",
+      "source_docs": [],
+      "difficulty": "easy",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL2",
+      "category": "sql",
+      "question": "How many lug-nut readings are out of tolerance overall?",
+      "expected_answer": "7",
+      "source_docs": [],
+      "difficulty": "easy",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL3",
+      "category": "sql",
+      "question": "Which vehicle(s) have 2+ out-of-tolerance lug nuts?",
+      "expected_answer": "NGA-AU25-0015 (3 nuts)",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL4",
+      "category": "sql",
+      "question": "Compute the out-of-tolerance rate by shift.",
+      "expected_answer": "A: 0%, B: 0.53%, C: 1.12% (5 of 445 on Shift C)",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL5",
+      "category": "sql",
+      "question": "Which vehicles are NOT SHIPPED, and why?",
+      "expected_answer": "AU-0015/0016/0017 QUARANTINED (torque); SO-0016 HELD (film build)",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL6",
+      "category": "sql",
+      "question": "Which part lots are quarantined?",
+      "expected_answer": "FL-88200 lot FW-2025-03-30, qty 150",
+      "source_docs": [],
+      "difficulty": "easy",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL7",
+      "category": "sql",
+      "question": "List open/contained NCs with highest escalation level.",
+      "expected_answer": "NC-2025-0137 (TORQUE-LOW, escalation L4 OPEN); NC-2025-0150 (P-122, escalation L2 closed, NC open)",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL8",
+      "category": "sql",
+      "question": "Which open work orders exist?",
+      "expected_answer": "WO-2025-0440 (PT-ROB-03, P-122, Ana Souza)",
+      "source_docs": [],
+      "difficulty": "easy",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL9",
+      "category": "sql",
+      "question": "Which vehicles failed final inspection (station 168)?",
+      "expected_answer": "NGA-AU25-0015, 0016, 0017",
+      "source_docs": [],
+      "difficulty": "easy",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL10",
+      "category": "sql",
+      "question": "Torque-defect rate within the 04-08 Shift C population (C2 check)?",
+      "expected_answer": "3 of 9 built = 33.3% (far exceeds 0.5%)",
+      "source_docs": [],
+      "difficulty": "hard",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL11",
+      "category": "sql",
+      "question": "How long did L2 escalations take to resolve?",
+      "expected_answer": "NC-2025-0137: 75 min; NC-2025-0142: 125 min; NC-2025-0150: 165 min",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL12",
+      "category": "sql",
+      "question": "Which employees have expired certifications?",
+      "expected_answer": "E-3002 James Park (SOP-TEC-214)",
+      "source_docs": [],
+      "difficulty": "easy",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL13",
+      "category": "sql",
+      "question": "Which station has the most open Class A defects?",
+      "expected_answer": "Station 168 (3 TORQUE-LOW)",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL14",
+      "category": "sql",
+      "question": "List the escalation chain for NC-2025-0137.",
+      "expected_answer": "L2 Marcus Reed \u2192 L3 Miguel Santos \u2192 L4 Dana Whitfield (OPEN)",
+      "source_docs": [],
+      "difficulty": "medium",
+      "requires_sql": true
+    },
+    {
+      "id": "SQL15",
+      "category": "sql",
+      "question": "Does the torque issue meet QCR-501 criteria? What field action exists?",
+      "expected_answer": "C3 met; FA-2025-001 CAMPAIGN, EVALUATION, 42 units, criterion C3",
+      "source_docs": [],
+      "difficulty": "hard",
+      "requires_sql": true
+    }
+  ]
+}

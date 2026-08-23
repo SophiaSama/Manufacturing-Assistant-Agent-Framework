@@ -1,0 +1,50 @@
+[project]
+name = "nga-manufacturing-assistant"
+version = "0.1.0"
+description = "NGA Manufacturing Assistant — Agentic decision support for Northgate Assembly Plant"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "chromadb==0.5.20",
+    "langchain==0.3.7",
+    "langchain-chroma==0.1.4",
+    "langchain-community==0.3.7",
+    "langchain-ollama>=0.3.3",
+    "langchain-openai==0.2.9",
+    "langgraph==0.2.53",
+    "langgraph-checkpoint-sqlite==2.0.1",
+    "langsmith==0.1.147",
+    "networkx>=3.6.1",
+    "posthog<6",
+    "python-dotenv==1.0.1",
+    "sqlglot>=25,<26",
+    "python-louvain>=0.16",
+    "PyJWT>=2.8.0",
+    "markdown-it-py>=3.0.0",
+    "pytest-html>=4.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.3",
+    "pytest-mock==3.14.0",
+    "pytest-html>=4.1.1",
+    "ruff==0.6.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nga"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
