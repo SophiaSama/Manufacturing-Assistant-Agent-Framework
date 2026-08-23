@@ -1,95 +1,140 @@
-# Northgate Assembly Plant — Synthetic Document Corpus
+# NGA Manufacturing Assistant — Agentic Decision Support
 
-Synthetic manufacturing documentation for evaluating agent frameworks (RAG, QA, decision-support evals) in a vehicle assembly plant environment.
+The NGA Manufacturing Assistant is a production-grade, role-aware agentic framework designed for **Apex Automotive — Northgate Assembly Plant (NGA)**. It acts as an intelligent manufacturing assistant that helps operators, technicians, engineers, and plant managers make fast, compliant operational decisions while strictly adhering to Standard Operating Procedures (SOPs).
 
-**Fictional universe:** Apex Automotive Corporation — Northgate Assembly Plant (NGA). All names, part numbers, people, and regulatory bodies are fictional.
+The architecture is adapted from the `DSS_Prototype` reference workflow and extended to handle 4-tier role-based access control, safety-critical Class A defects, recall evaluation criteria (QCR-501), and multi-document inconsistencies.
 
-## Corpus Universe
+---
 
-| Entity | Detail |
-|---|---|
-| Plant | Northgate Assembly Plant (NGA) |
-| Models | Aurora AU-2025 (compact SUV), Solstice SO-2025 (sedan) |
-| Production rate | 42 vehicles/hour |
-| Shifts | A 06:00–14:00 · B 14:00–22:00 · C 22:00–06:00 |
-| Regulator | National Road Safety Administration (NRSA) — fictional |
-| Standard | Global Vehicle Safety Regulation (GVSR) — fictional |
+## 🛠️ Technology Stack & Rationale
 
-## Document Index
-
-### Operator SOPs — `operator-sops/`
-| Doc | Topic | Key facts |
+| Technology | Selected Component | Why This Stack Was Chosen |
 |---|---|---|
-| SOP-OPR-101 | Wheel installation & torque (Sta. 144) | 105 Nm ±5%, star sequence, tool TQ-6012 |
-| SOP-OPR-114 | Windshield installation (Sta. 152) | 8×12 mm bead, 10 min open time, 4 h cure |
-| SOP-OPR-127 | Engine mount installation (Sta. 118) | 62 Nm + 90°, M12, tool TQ-6015 |
-| SOP-OPR-142 | Brake fluid fill (Sta. 131) | DOT 4, 0.5–1.0 bar, bleed RR→RL→FR→FL |
-| SOP-OPR-158 | Final inspection & torque audit (Sta. 168) | Audit every 2 h, 3 vehicles, re-audit 10 |
+| **Orchestration** | **LangGraph** | Provides a state-machine framework to define deterministic, predictable paths (`prepare` → `agent` ⇆ `tools` → `synthesis` → `hitl`). This prevents unstructured agent wandering and guarantees that safety verification nodes are always hit before outputting answers. |
+| **Vector DB** | **ChromaDB** | Lightweight, file-system persistent database that supports standard metadata filtering. Crucial for enforcing path-derived RBAC constraints during retrieval (`level_rank <= user_level`) directly inside the similarity search. |
+| **Knowledge Graph** | **NetworkX** | Python-native graph library. Used to persist extracted entities and relationships (e.g. `Machine`, `FaultCode`, `RecallCriteria`) for GraphRAG BFS expansion and multi-hop reasoning. |
+| **Security (SQL)** | **SQLGlot** | Strict SQL AST parser. Validates generated text-to-SQL commands prior to execution. Restricts execution strictly to single, read-only `SELECT` queries, matching the live database schema (via `PRAGMA table_info`) to block SQL injection completely. |
+| **Package Manager** | **uv / hatchling** | Modern, extremely fast Python package installer and workspace sync tool. Guarantees reproducible builds via locked dependencies. |
+| **Testing** | **pytest** | Standard framework used to run the 75-question QA evaluation suite and the conflict detection scenarios as parameterized integration tests. |
 
-### Technician Troubleshooting SOPs — `technician-sops/`
-| Doc | Topic | Key facts |
-|---|---|---|
-| SOP-TEC-201 | Welding robot RB-07 faults | Error codes E-4012/E-5023/E-5041/E-4055/E-4031 |
-| SOP-TEC-214 | Torque tool calibration & drift | 3 months / 100k cycles, ±1.5%, drift >2% |
-| SOP-TEC-228 | Conveyor CV-2 jam recovery | E-Stop codes RC-01..04, jog 20% restart |
-| SOP-TEC-235 | Paint robot PT-ROB-03 faults | Codes P-110/P-122/P-134/P-145 |
+---
 
-### Machine Technical Details — `machine-details/`
-| Doc | Topic | Key facts |
-|---|---|---|
-| TEC-301 | RoboTech RX-700 welding robot | 150 kg payload, 2.7 m reach, ±0.05 mm, 4,000-weld cap life |
-| TEC-314 | TorqMaster TF-6000 torque tool | 5–150 Nm, ±1.5%, 18 V battery |
-| TEC-328 | Conveyor Line 2 (CV-2) | 12 m/min, 36 pallets, PS-200/PR-100 sensors |
-| TEC-342 | SprayTech ST-450 paint robot | 40,000 rpm bell, 45 µm film build |
+## 📐 System Design & Architecture
 
-### Failure Analysis & Escalation — `failure-analysis/`
-| Doc | Topic | Key facts |
-|---|---|---|
-| FAP-401 | 8D failure analysis procedure | D1–D8, 30d/1,000-unit verification, 500-unit / 0.5% escalation |
-| ESC-402 | Escalation workflow matrix | L1 30 min → L2 2 h → L3 8 h → L4 24 h; Class A = 1 h |
+```mermaid
+graph TD
+    User([User Prompt]) --> CLI[CLI / Role Selector]
+    CLI --> Classifier[Complexity Classifier]
+    Classifier --> Router{Model Router}
+    Router -- 0-3 --> T1[Haiku / 1-hop]
+    Router -- 4-6 --> T2[Sonnet / 3-hop]
+    Router -- 7-10 --> T3[Opus / 8-hop]
+    T1 & T2 & T3 --> Graph[LangGraph Orchestrator]
+    
+    subgraph Graph Nodes
+        Graph --> Prep[prepare: Split compound query]
+        Prep --> Agt[agent: Prompt Policy + Role Prompt]
+        Agt --> Tools{Route After Agent}
+        Tools -- tool calls --> ToolNode[tools: query_nga_database / search_sop_documents]
+        ToolNode --> Agt
+        Tools -- no tools / loop --> Synth[synthesis: Structure FinalAnswer + Safety Checks]
+        Synth --> HITL[hitl: decisions_log + CLI Gate]
+    end
+    
+    HITL --> Output([Rendered Answer])
+```
 
-### Recall & Quality — `recall-quality/`
-| Doc | Topic | Key facts |
-|---|---|---|
-| QCR-501 | Recall trigger criteria | C1 safety, C2 0.5%/2% rates, C3 3 complaints/30d, C4 >1,000 units, C5 regulatory; NRSA in 5 business days |
+### 1. 4-Tier Role-Based Access Control (RBAC)
+To protect sensitive quality records and plant metrics, access is strictly partitioned:
+* **operator (rank 1)**: Access restricted to `operator-sops/` (assembly procedures, wheel torque).
+* **technician (rank 2)**: Adds access to `technician-sops/`, `machine-details/`, and `maintenance-work-orders/`.
+* **engineer (rank 3)**: Adds access to `failure-analysis/`, `supplier-quality/`, and `training/`.
+* **manager (rank 4)**: Adds full access to safety recalls (`recall-quality/`) and regulatory stop-ship logs.
 
-### Additional Documents — `additional-docs/`
-| Folder | Docs |
-|---|---|
-| `maintenance-work-orders/` | WO-2025-0417 (RB-07 E-4012), WO-2025-0433 (TQ-6012 drift), WO-2025-0421 (CV-2 jam), WO-2025-0440 (PT-ROB-03, open) |
-| `supplier-quality/` | SCAR-2025-007 (brake fluid moisture), AUD-2025-031 (ApexForging), APP-04 (adhesives), APP-07 (brake fluid) |
-| `training/` | TR-2025-030 certification matrix (incl. expired cert E-3002) |
+*Security Note: Access levels are derived server-side from document folder paths, preventing metadata poisoning from caller input.*
 
-### Production Database — `database/`
-| File | Purpose |
-|---|---|
-| `nga.db` | Live SQLite DB (17 tables, ~2,000 rows, seeded stories) |
-| `schema.sql` / `seed.py` | Schema + deterministic builder |
-| `query.py` | Run live queries: `python3 query.py "SELECT ..."` |
-| `example-queries.sql` | 15 worked examples |
-| `database-readme.md` | Schema, stories, eval usage |
+### 2. Multi-Hop Hybrid Retrieval (Vector + GraphRAG)
+* **Vector Store**: Semantic similarity search in ChromaDB, filtered by category and access level rank: `{"level_rank": {"$lte": user_level}}`.
+* **GraphRAG**: Builds an entity-relationship graph (e.g. `SOP-OPR-101 -- requires --> TQ-6012`). Seeds are identified using cosine similarity of query embeddings, and a BFS expansion retrieves adjacent nodes while pruning any node with `level_rank > user_level`.
 
-### Eval Question Sets — `eval-questions/`
-| File | Type | # |
-|---|---|---|
-| `01-retrieval-qa.md` | Fact lookup | 30 |
-| `02-multi-hop-qa.md` | Cross-doc reasoning | 12 |
-| `03-scenario-decision-qa.md` | Operational decisions | 8 |
-| `04-escalation-recall-qa.md` | Escalation/recall decisions | 10 |
-| `05-sql-questions.md` | Live SQL (verified answers) | 15 |
-| `questions.json` | Machine-readable bundle | 75 |
+### 3. Human-in-the-Loop (HITL) Safety Gate
+All high-consequence recommendation verbs (e.g., `stop-ship`, `quarantine`, `recall`, `halt line`) are intercepted. 
+* Recommendations are persisted to `app_state.db` under the `decisions_log` audit trail.
+* If a Class A (safety-critical) action is detected, the CLI prompts for a **mandatory approver ID** and requires justification on rejection.
 
-### Variant Corpus — `variant-corpus/`
-Copies of the main docs with **8 planted inconsistencies** (torque 108 Nm, cap life 5,000, cal interval 6 months, Class A 4 h, C2 1.0%, rear mount 50 Nm, bleed sequence, cure 2 h) for conflict-detection evals. Ledger: `variant-corpus/planted-inconsistencies.md` (keep out of the agent corpus).
+---
 
-## Eval Notes
+## 🚀 Getting Started & Setup
 
-- **Ground truth:** see `ground-truth.md` — key facts and answer keys. Exclude this file from the agent's retrieval corpus if testing retrieval/QA.
-- **Cross-document reasoning paths** deliberately built in (good eval targets):
-  - Torque tool drift (SOP-TEC-214) → station halt → re-audit (SOP-OPR-158) → escalation (ESC-402) → recall criteria (QCR-501)
-  - Conveyor spatter (TEC-328 §6) → jam (SOP-TEC-228) → TCP deviation E-5023 (SOP-TEC-201)
-  - Weld cap life 4,000 (TEC-301) → halt (SOP-TEC-201)
-  - Windshield retention (SOP-OPR-114) → Class A (QCR-501 §2)
-- **All numbers are consistent across documents** (torque specs, intervals, thresholds, error codes, part numbers, personnel names).
-- **Eval scenarios:** 75 questions in `eval-questions/` (5 markdown sets + `questions.json`), 15 of which require live SQL against `database/nga.db`.
-- **Conflict-detection evals:** use `variant-corpus/` (8 planted inconsistencies, ledger in `planted-inconsistencies.md`).
+### 1. Prerequisites
+Ensure you have `uv` installed. If not, install it via:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### 2. Clone and Setup Environment
+Copy the env template and set your valid **OpenRouter API Key** (or use local Ollama config if switching to `Local` execution environment):
+```bash
+cp .env.example .env
+# Edit .env and fill in:
+# OPENROUTER_API_KEY=your-real-openrouter-key
+```
+
+### 3. Install Dependencies
+Sync project dependencies:
+```bash
+uv sync
+```
+
+### 4. Build the Retrieval Bases
+Build the Chroma vector store and the GraphRAG knowledge graph:
+```bash
+# Ingests all 48 SOPs/specs with RBAC metadata
+uv run python -m nga.ingestion.build_vector_store
+
+# Extracts entity-relation links and saves the graph
+uv run python -m nga.ingestion.build_graph
+```
+
+### 5. Start the Interactive CLI
+Launch the assistant. You can specify a starting role (`operator`, `technician`, `engineer`, `manager`). 
+```bash
+uv run python -m nga.cli --role operator
+```
+*Tip: You can switch roles mid-session in the prompt by typing `role manager` or `role technician`.*
+
+---
+
+## 📊 Running Evaluations & Benchmarks
+
+### 1. 75-Question Integration Benchmark
+Runs the complete test suite against `eval-questions/questions.json` spanning fact retrieval, multi-hop reasoning, scenarios, escalations, and live SQL generation:
+```bash
+# Run with deterministic scoring checks
+uv run pytest tests/integration/test_benchmark.py -v -s
+
+# Run with LLM-as-judge scoring enabled (uses API)
+uv run pytest tests/integration/test_benchmark.py -v -s --judge
+```
+*Evaluation results, latency logs, and details of failed cases are saved automatically to `reports/eval/` in Markdown and JSON.*
+
+### 2. Planted Conflict Detection Evals
+Tests the agent's ability to identify and flag the 8 planted contradictions (e.g. wheel torque 108 vs 105 Nm, calibration cycles, windshield cure times) when the `variant-corpus/` is ingested:
+```bash
+uv run pytest tests/integration/test_conflict_detection.py -v -s
+```
+
+---
+
+## 📂 Corpus Universe & Document Index
+
+The synthetic NGA corpus maps the operations of the fictional **Apex Automotive — Northgate Assembly Plant (NGA)** manufacturing compact SUVs (Aurora AU-2025) and sedans (Solstice SO-2025) at a rate of 42 vehicles/hour across three shifts (A, B, C).
+
+### Document Directory Structure:
+* [`operator-sops/`](file:///Users/ruiping/projects/manufacturing_agent/operator-sops/): Wheel torques (105 Nm ±5%), adhesive open times, and standard final audits.
+* [`technician-sops/`](file:///Users/ruiping/projects/manufacturing_agent/technician-sops/): Weld fault diagnosis, conveyor jam recovery, and paint robot P-codes.
+* [`machine-details/`](file:///Users/ruiping/projects/manufacturing_agent/machine-details/): Robot reach specifications and calibration intervals (3 months / 100k cycles).
+* [`failure-analysis/`](file:///Users/ruiping/projects/manufacturing_agent/failure-analysis/): 8D problem-solving (FAP-401) and escalation timelines (ESC-402).
+* [`recall-quality/`](file:///Users/ruiping/projects/manufacturing_agent/recall-quality/): Recall criteria (QCR-501) for safety, defect rates, and regulatory reporting.
+* [`additional-docs/`](file:///Users/ruiping/projects/manufacturing_agent/additional-docs/): Maintenance work orders, supplier quality audits, and personnel certifications.
+* [`database/`](file:///Users/ruiping/projects/manufacturing_agent/database/): Seeded SQLite database (`nga.db`) containing production, quality checks, work orders, and training histories.
