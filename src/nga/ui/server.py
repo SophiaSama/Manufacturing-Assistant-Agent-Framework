@@ -21,6 +21,12 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from nga.config import Settings
+from nga.evaluation.ci_tracker import (
+    generate_svg_trend_chart,
+    get_trend_series,
+    load_history,
+    record_eval_run,
+)
 from nga.evaluation.eval_runner import (
     compare_evaluation_runs,
     get_evaluation_report,
@@ -188,6 +194,22 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as StarletteRequest
+
+    class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+        """Disable caching for JS/CSS static assets so the browser always fetches the latest version."""
+
+        async def dispatch(self, request: StarletteRequest, call_next):
+            response = await call_next(request)
+            path = request.url.path
+            if path.startswith("/static/") and (path.endswith(".js") or path.endswith(".css")):
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+                response.headers["Pragma"] = "no-cache"
+            return response
+
+    app.add_middleware(NoCacheStaticMiddleware)
 
     # ── Role Endpoints ────────────────────────────────────────────────────────
 
@@ -586,6 +608,17 @@ def create_app() -> FastAPI:
             role=request.role,
         )
 
+        # Automatically record to history ledger for trend tracking
+        try:
+            report_data = {
+                "run_label": summary.get("run_label"),
+                "summary": summary,
+                "results": [r.__dict__ if hasattr(r, "__dict__") else r for r in results],
+            }
+            record_eval_run(report_data)
+        except Exception as exc:
+            logger.warning("Auto-recording eval run failed: %s", exc)
+
         return {
             "run_label": summary.get("run_label"),
             "summary": summary,
@@ -618,6 +651,32 @@ def create_app() -> FastAPI:
 
         comparison = compare_evaluation_runs(report_a, report_b)
         return comparison
+
+    # ── Evaluation History & Trend Visualizations Endpoints ───────────────────
+
+    @app.get("/api/eval/history")
+    def get_history(limit: int = Query(50, description="Max runs to return")) -> dict[str, Any]:
+        history = load_history()
+        return {
+            "history": history[-limit:],
+            "total_recorded": len(history),
+        }
+
+    @app.get("/api/eval/trends")
+    def get_trends() -> dict[str, Any]:
+        trends = get_trend_series()
+        return trends
+
+    @app.get("/api/eval/trends.svg")
+    def get_trends_svg() -> Any:
+        from fastapi.responses import Response
+        svg_content = generate_svg_trend_chart()
+        return Response(content=svg_content, media_type="image/svg+xml")
+
+    @app.post("/api/eval/record")
+    def record_run(report: dict[str, Any]) -> dict[str, Any]:
+        entry = record_eval_run(report)
+        return {"success": True, "entry": entry}
 
     # ── Static Frontend Files ─────────────────────────────────────────────────
 

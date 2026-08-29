@@ -17,6 +17,18 @@ os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 _VALID_ENVIRONMENTS = {"local": "Local", "cloud": "Cloud"}
 
 
+_VALID_EMBEDDING_STRATEGIES = {"batch", "sequential"}
+
+
+def _parse_embedding_strategy() -> str:
+    raw = (os.getenv("EMBEDDING_STRATEGY", "batch") or "").strip().lower()
+    if raw not in _VALID_EMBEDDING_STRATEGIES:
+        raise ValueError(
+            f"EMBEDDING_STRATEGY must be 'batch' or 'sequential', got: {raw!r}"
+        )
+    return raw
+
+
 @dataclass(frozen=True)
 class Settings:
     execution_environment: str
@@ -33,6 +45,7 @@ class Settings:
     vector_store_dir: str
     documents_dir: str
     graph_store_dir: str
+    graph_max_docs: int
     langsmith_tracing_enabled: bool
     # RBAC JWT
     jwt_secret: str
@@ -47,6 +60,10 @@ class Settings:
     rag_tier1_max_hops: int
     rag_tier2_max_hops: int
     rag_tier3_max_hops: int
+    # Batch embedding tuning
+    embedding_poll_interval: float
+    embedding_max_wait: float
+    embedding_strategy: str  # "batch" | "sequential"
 
     @property
     def provider(self) -> str:
@@ -109,6 +126,7 @@ class Settings:
             vector_store_dir=os.getenv("VECTOR_STORE_DIR", "data/vector_store"),
             documents_dir=os.getenv("DOCUMENTS_DIR", ""),  # auto-discovered if empty
             graph_store_dir=os.getenv("GRAPH_STORE_DIR", "data/graph_store"),
+            graph_max_docs=int(os.getenv("GRAPH_MAX_DOCS", "0")),
             langsmith_tracing_enabled=tracing_enabled,
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret"),
             jwt_dev_mode=os.getenv("JWT_DEV_MODE", "true").lower() == "true",
@@ -133,4 +151,11 @@ class Settings:
             rag_tier1_max_hops=int(os.getenv("RAG_TIER1_MAX_HOPS", "1")),
             rag_tier2_max_hops=int(os.getenv("RAG_TIER2_MAX_HOPS", "3")),
             rag_tier3_max_hops=int(os.getenv("RAG_TIER3_MAX_HOPS", "8")),
+            embedding_poll_interval=float(
+                os.getenv("EMBEDDING_POLL_INTERVAL", "10")
+            ),
+            embedding_max_wait=float(
+                os.getenv("EMBEDDING_MAX_WAIT", "1800")
+            ),
+            embedding_strategy=_parse_embedding_strategy(),
         )

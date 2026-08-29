@@ -1,6 +1,9 @@
 # NGA Manufacturing Assistant — Agentic Decision Support
 
-The NGA Manufacturing Assistant is a production-grade, role-aware agentic framework designed for **Apex Automotive — Northgate Assembly Plant (NGA)**. It acts as an intelligent manufacturing assistant that helps operators, technicians, engineers, and plant managers make fast, compliant operational decisions while strictly adhering to Standard Operating Procedures (SOPs).
+> **⚠️ Disclaimer — Synthetic Evaluation Corpus**:  
+> All data in this repository — including **Apex Automotive**, the **Northgate Assembly Plant (NGA)**, vehicle models (*Aurora AU-2025*, *Solstice SO-2025*), Standard Operating Procedures (SOPs), machine specifications, fault codes, non-conformance records, torque logs, and SQLite database tables (`nga.db`) — is **entirely synthetic and fictional**. It has been generated strictly for research, testing, and AI decision-support benchmark evaluation purposes.
+
+The NGA Manufacturing Assistant is a production-grade, role-aware agentic framework designed for the synthetic **Apex Automotive — Northgate Assembly Plant (NGA)** benchmark. It acts as an intelligent manufacturing assistant that helps operators, technicians, engineers, and plant managers make fast, compliant operational decisions while strictly adhering to Standard Operating Procedures (SOPs).
 
 The architecture is adapted from the `DSS_Prototype` reference workflow and extended to handle 4-tier role-based access control, safety-critical Class A defects, recall evaluation criteria (QCR-501), and multi-document inconsistencies.
 
@@ -96,8 +99,20 @@ uv run python -m nga.ingestion.build_vector_store
 uv run python -m nga.ingestion.build_graph
 ```
 
-### 5. Start the Interactive CLI
-Launch the assistant. You can specify a starting role (`operator`, `technician`, `engineer`, `manager`). 
+### 5. Start the Web User Interface (Recommended)
+Launch the modern, responsive web dashboard:
+```bash
+uv run python -m nga.ui.runner --port 8000 --host 127.0.0.1 --open-browser
+```
+Access the dashboard at `http://127.0.0.1:8000` to interact with:
+* **Role Login & Switching**: Switch clearance levels between Operator (L1), Technician (L2), Engineer (L3), and Plant Manager (L4).
+* **Final Answer Display**: Direct answers, Class A safety alerts, ESC-402 escalation levels, QCR-501 recall criteria, and verified document/SQL citations.
+* **HIL Approval Queue**: Review, authorize, or reject safety-critical actions with mandatory approver ID and Class A justification enforcement.
+* **Real-Time Execution Logs**: Inspect the LangGraph state trace (`prepare` → `agent` ⇆ `tools` → `synthesis` → `hitl`) and SQL/Vector tool outputs.
+* **Evaluation Runner & Comparison Studio**: Run benchmark suites and compare candidate vs baseline runs side-by-side with regression analysis.
+
+### 6. Start the Interactive CLI (Alternative)
+Launch the terminal chat loop:
 ```bash
 uv run python -m nga.cli --role operator
 ```
@@ -105,30 +120,78 @@ uv run python -m nga.cli --role operator
 
 ---
 
-## 📊 Running Evaluations & Benchmarks
+## 🖥️ Web User Interface Features
 
-### 1. 75-Question Integration Benchmark
-Runs the complete test suite against `eval-questions/questions.json` spanning fact retrieval, multi-hop reasoning, scenarios, escalations, and live SQL generation:
+The NGA Web Interface (`src/nga/ui/`) is a full-featured dashboard designed for manufacturing operations:
+
+| UI Module | Purpose & Capabilities |
+|---|---|
+| **💬 Assistant Chat & Final Answer** | Interactive decision support with structured responses: 🚨 **Class A Defect hazard banners**, ⚡ **ESC-402 escalation tags**, 🏷️ **QCR-501 recall criteria**, 📋 **Key findings**, and 🔍 **Verified citations** linking to SOP document IDs and SQL tables. |
+| **🛡️ HIL Safety Gate & Queue** | Review pending high-consequence actions (`stop-ship`, `quarantine`, `halt line`). Enforces mandatory approver ID and engineering justification notes for Class A safety items before persisting to `app_state.db`. |
+| **📜 System & Execution Logs** | Real-time LangGraph step trace feed, exact SQL queries executed against `nga.db` with row counts, ChromaDB retrieval scores, and a central filterable log console (`INFO`, `WARNING`, `ERROR`). |
+| **📊 Evaluation Benchmark Runner** | Run evaluations across all 85 benchmark questions or targeted subsets (`retrieval`, `multi-hop`, `scenario`, `escalation-recall`, `sql`, `stress`, or quick 5-question smoke tests) with live progress tracking. |
+| **⚖️ Evaluation Comparison Studio** | Select any two runs (Baseline vs Candidate) to analyze **Pass Rate Deltas ($\Delta\%$)**, **Average Score Deltas**, **Latency Deltas**, category breakdowns, and a **Question Transition Matrix** classifying Regressions (🔻), Improvements (🔺), and Maintained Passes (✅). |
+| **📈 CI Trends & Historical Tracking** | Visualize evaluation trajectories across Git commits and CI builds: **Pass rate trends line chart (SVG)** with $\ge 70\%$ threshold target, category health breakdowns, and chronological commit ledger. |
+| **👤 RBAC Clearance Matrix** | View clearance levels (1 to 4), permitted document folder paths, and operational role boundaries. |
+
+---
+
+## 🔄 CI Flow & Evaluation Tracking Over Time
+
+The project integrates continuous evaluation tracking into GitHub Actions and local CI pipelines:
+
+### 1. GitHub Actions Pipeline (`.github/workflows/ci.yml`)
+On every `push` and `pull_request`:
+* Runs linting (`ruff`) and automated unit/integration test suites.
+* Executes benchmark evaluation suite across all 6 test categories.
+* Ingests results into `reports/eval/history.json` with commit metadata (`commit_sha`, `branch`, `author`, `message`, `timestamp`).
+* Computes deltas vs the previous commit and outputs a rich **`$GITHUB_STEP_SUMMARY`** Markdown report with category health tables.
+* Renders standalone SVG trend charts (`reports/eval/trends.svg`) and uploads all evaluation artifacts.
+
+### 2. Standalone CI Tracker CLI (`src/nga/evaluation/ci_tracker.py`)
+Run the tracker manually to record runs or generate SVG trend charts:
 ```bash
-# Run with deterministic scoring checks
-uv run pytest tests/integration/test_benchmark.py -v -s
-
-# Run with LLM-as-judge scoring enabled (uses API)
-uv run pytest tests/integration/test_benchmark.py -v -s --judge
-```
-*Evaluation results, latency logs, and details of failed cases are saved automatically to `reports/eval/` in Markdown and JSON.*
-
-### 2. Planted Conflict Detection Evals
-Tests the agent's ability to identify and flag the 8 planted contradictions (e.g. wheel torque 108 vs 105 Nm, calibration cycles, windshield cure times) when the `variant-corpus/` is ingested:
-```bash
-uv run pytest tests/integration/test_conflict_detection.py -v -s
+# Record an eval report into the history ledger and render SVG chart
+uv run python -m nga.evaluation.ci_tracker \
+  --report-file reports/eval/20260823_143827.json \
+  --generate-svg reports/eval/trends.svg \
+  --threshold 0.70
 ```
 
 ---
 
-## 📂 Corpus Universe & Document Index
+## 🧪 Comprehensive Test Suites & Benchmarks
 
-The synthetic NGA corpus maps the operations of the fictional **Apex Automotive — Northgate Assembly Plant (NGA)** manufacturing compact SUVs (Aurora AU-2025) and sedans (Solstice SO-2025) at a rate of 42 vehicles/hour across three shifts (A, B, C).
+The project includes an extensive automated test framework covering unit APIs, integration benchmarks, adversarial stress testing, and CI tracking:
+
+### 1. UI Backend & Integration Suite (`tests/test_ui_api.py`)
+Tests all REST endpoints, RBAC switching, HIL approval flows, and report comparison engines:
+```bash
+uv run pytest tests/test_ui_api.py -v
+```
+
+### 2. Stress & Adversarial Test Suite (`tests/integration/test_stress.py`)
+Stress tests concurrency, high load, and adversarial security:
+```bash
+uv run pytest tests/integration/test_stress.py -v
+```
+
+### 3. CI Evaluation Tracker Suite (`tests/test_ci_tracker.py`)
+Tests git metadata extraction, history ledger persistence, delta tracking, SVG chart rendering, and trend API endpoints:
+```bash
+uv run pytest tests/test_ci_tracker.py -v
+```
+
+### 4. Running All 21 Automated Tests Together
+```bash
+uv run pytest tests/test_ui_api.py tests/integration/test_stress.py tests/test_ci_tracker.py -v
+```
+
+---
+
+## 📂 Corpus Universe & Document Index (100% Synthetic Benchmark)
+
+The NGA corpus represents a **fully synthetic, simulated automotive manufacturing universe** designed to benchmark agentic decision support systems. It models the fictional **Apex Automotive — Northgate Assembly Plant (NGA)** manufacturing compact SUVs (*Aurora AU-2025*) and sedans (*Solstice SO-2025*) at a rate of 42 vehicles/hour across three shifts (A, B, C). No real-world manufacturer data, proprietary specs, or confidential plant records are contained in this repository.
 
 ### Document Directory Structure:
 * [`operator-sops/`](file:///Users/ruiping/projects/manufacturing_agent/operator-sops/): Wheel torques (105 Nm ±5%), adhesive open times, and standard final audits.
@@ -137,4 +200,6 @@ The synthetic NGA corpus maps the operations of the fictional **Apex Automotive 
 * [`failure-analysis/`](file:///Users/ruiping/projects/manufacturing_agent/failure-analysis/): 8D problem-solving (FAP-401) and escalation timelines (ESC-402).
 * [`recall-quality/`](file:///Users/ruiping/projects/manufacturing_agent/recall-quality/): Recall criteria (QCR-501) for safety, defect rates, and regulatory reporting.
 * [`additional-docs/`](file:///Users/ruiping/projects/manufacturing_agent/additional-docs/): Maintenance work orders, supplier quality audits, and personnel certifications.
+* [`eval-questions/`](file:///Users/ruiping/projects/manufacturing_agent/eval-questions/): 85 benchmark questions across Retrieval, Multi-hop, Scenario, Escalation & Recall, SQL, and Stress testing.
 * [`database/`](file:///Users/ruiping/projects/manufacturing_agent/database/): Seeded SQLite database (`nga.db`) containing production, quality checks, work orders, and training histories.
+

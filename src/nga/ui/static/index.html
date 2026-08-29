@@ -17,7 +17,7 @@
         <div class="brand-logo">
           <span class="logo-icon">⚙️</span>
           <div class="brand-text">
-            <span class="brand-plant">Apex Automotive • Northgate Assembly</span>
+            <span class="brand-plant">Apex Automotive • Northgate Assembly <span style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 1px 5px; border-radius: 3px; font-weight: 700; margin-left: 4px;">SYNTHETIC EVALUATION</span></span>
             <span class="brand-app">NGA Manufacturing Assistant</span>
           </div>
         </div>
@@ -39,6 +39,9 @@
         </button>
         <button class="nav-tab" data-tab="compare">
           <span class="tab-icon">⚖️</span> Compare Evaluations
+        </button>
+        <button class="nav-tab" data-tab="trends">
+          <span class="tab-icon">📈</span> CI Trends & History
         </button>
         <button class="nav-tab" data-tab="roles">
           <span class="tab-icon">👤</span> RBAC Roles
@@ -87,7 +90,7 @@
                 <div class="msg-body">
                   <div class="msg-author">NGA Manufacturing Assistant</div>
                   <div class="msg-prose">
-                    Welcome to the Northgate Assembly Decision Support Assistant. I am grounded in plant SOPs, torque databases, failure analysis records (FAP-401), and recall safety criteria (QCR-501). How can I assist you with assembly or quality today?
+                    Welcome to the Northgate Assembly Decision Support Assistant. I am grounded in a <strong>fully synthetic evaluation corpus</strong> representing plant SOPs, torque databases, failure analysis records (FAP-401), and recall safety criteria (QCR-501). How can I assist you with assembly or quality today?
                   </div>
                   <div class="quick-prompts-container">
                     <span class="qp-label">Suggested queries:</span>
@@ -210,6 +213,7 @@
                     <option value="scenario">Manufacturing Scenarios (S1–S8)</option>
                     <option value="escalation-recall">Escalation & Recall Criteria (E1–E10)</option>
                     <option value="sql">SQL Database Queries (SQL1–SQL15)</option>
+                    <option value="stress">Stress & Adversarial Suite (STR1–STR10)</option>
                   </select>
                 </div>
 
@@ -383,7 +387,81 @@
         </div>
       </section>
 
-      <!-- TAB 6: RBAC ROLES & PERMISSIONS -->
+      <!-- TAB 6: CI TRENDS & HISTORICAL TRACKING -->
+      <section class="tab-pane" id="pane-trends">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">📈 Continuous Evaluation & CI Trends</h2>
+              <p class="pane-subtitle">Track evaluation pass rates, scores, and latency metrics across Git commits and CI builds over time.</p>
+            </div>
+            <div class="pane-actions">
+              <button class="btn btn-sm btn-outline" id="btn-refresh-trends">🔄 Refresh Data</button>
+              <a href="/api/eval/trends.svg" target="_blank" class="btn btn-sm btn-outline">📥 Export SVG Chart</a>
+            </div>
+          </div>
+
+          <!-- Trend Overview Metric Cards -->
+          <div class="delta-cards-grid" id="trends-metric-cards">
+            <!-- Injected via JavaScript -->
+          </div>
+
+          <!-- SVG Visual Trend Chart Card -->
+          <div class="card mb-4">
+            <div class="card-header-flex">
+              <h3 class="card-title">Pass Rate Trajectory Across Commits (Target: ≥ 70%)</h3>
+              <span class="badge badge-info" id="trends-runs-count">0 Runs Tracked</span>
+            </div>
+            <div class="chart-container" id="trends-chart-container" style="overflow-x: auto; text-align: center; min-height: 200px;">
+              <div class="loading-spinner">Loading trend visualizations...</div>
+            </div>
+          </div>
+
+          <!-- Category Performance Multi-Trend Card -->
+          <div class="card mb-4">
+            <h3 class="card-title">Category Health Breakdown Across Runs</h3>
+            <div class="table-responsive">
+              <table class="data-table" id="trends-category-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Current Pass Rate</th>
+                    <th>Current Avg Score</th>
+                    <th>Target Status</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Historical Commits Ledger Table -->
+          <div class="card">
+            <div class="card-header-flex">
+              <h3 class="card-title">Chronological Evaluation Ledger (CI Builds & Commits)</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table" id="trends-ledger-table">
+                <thead>
+                  <tr>
+                    <th>Commit</th>
+                    <th>Branch</th>
+                    <th>Timestamp</th>
+                    <th>Message</th>
+                    <th>Pass Rate</th>
+                    <th>Score</th>
+                    <th>Latency</th>
+                    <th>CI Status</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: RBAC ROLES & PERMISSIONS -->
       <section class="tab-pane" id="pane-roles">
         <div class="pane-inner">
           <div class="pane-header">
@@ -464,6 +542,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

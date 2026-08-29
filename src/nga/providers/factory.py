@@ -16,11 +16,25 @@ def make_embeddings(settings: Settings) -> Embeddings:
             base_url=settings.ollama_base_url,
         )
 
-    from langchain_openai import OpenAIEmbeddings
-    return OpenAIEmbeddings(
+    from nga.providers.openrouter_embeddings import (
+        BatchOpenRouterEmbeddings,
+        OpenRouterEmbeddings,
+    )
+
+    if settings.embedding_strategy == "batch":
+        return BatchOpenRouterEmbeddings(
+            model=settings.embedding_model,
+            api_key=settings.openrouter_api_key,
+            base_url=settings.openrouter_base_url,
+            poll_interval=settings.embedding_poll_interval,
+            max_wait=settings.embedding_max_wait,
+        )
+
+    # "sequential" — one synchronous request per text
+    return OpenRouterEmbeddings(
         model=settings.embedding_model,
-        openai_api_key=settings.openrouter_api_key,
-        openai_api_base=settings.openrouter_base_url,
+        api_key=settings.openrouter_api_key,
+        base_url=settings.openrouter_base_url,
     )
 
 

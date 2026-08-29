@@ -102,7 +102,15 @@
     transitionSummary: document.getElementById("transition-summary"),
     compareCategoryTable: document.getElementById("compare-category-table"),
     compareQuestionsTable: document.getElementById("compare-questions-table"),
-    
+
+    // Trends & CI Tracking
+    trendsMetricCards: document.getElementById("trends-metric-cards"),
+    trendsChartContainer: document.getElementById("trends-chart-container"),
+    trendsCategoryTable: document.getElementById("trends-category-table"),
+    trendsLedgerTable: document.getElementById("trends-ledger-table"),
+    trendsRunsCount: document.getElementById("trends-runs-count"),
+    btnRefreshTrends: document.getElementById("btn-refresh-trends"),
+
     // Status
     systemStatus: document.getElementById("system-status"),
     statusEnv: document.getElementById("status-env"),
@@ -198,6 +206,11 @@
         filterComparisonQuestions(e.target.getAttribute("data-qfilter"));
       });
     });
+
+    // Trends
+    if (els.btnRefreshTrends) {
+      els.btnRefreshTrends.addEventListener("click", () => fetchTrendsData());
+    }
   }
 
   function switchTab(tabName) {
@@ -220,6 +233,7 @@
     if (tabName === "hil") fetchDecisions();
     if (tabName === "logs") fetchLogs();
     if (tabName === "compare") fetchEvalReports();
+    if (tabName === "trends") fetchTrendsData();
   }
 
   // ── Roles & Security (RBAC) ────────────────────────────────────────────────
@@ -1194,6 +1208,161 @@
         `Checks A: ${JSON.stringify(q.checks_a)}\n` +
         `Checks B: ${JSON.stringify(q.checks_b)}`
     );
+  }
+
+  // ── Evaluation Trends & CI Tracking ──────────────────────────────────────
+
+  async function fetchTrendsData() {
+    try {
+      const [trendsRes, svgRes] = await Promise.all([
+        fetch("/api/eval/trends"),
+        fetch("/api/eval/trends.svg"),
+      ]);
+
+      const trendsData = await trendsRes.json();
+      const svgContent = await svgRes.text();
+
+      // 1. Render SVG Chart
+      if (els.trendsChartContainer) {
+        els.trendsChartContainer.innerHTML = svgContent;
+      }
+
+      // 2. Render Overview Metric Cards
+      renderTrendsOverview(trendsData);
+
+      // 3. Render Category Health Table
+      renderTrendsCategoryTable(trendsData);
+
+      // 4. Render Ledger Table
+      renderTrendsLedgerTable(trendsData.runs || []);
+
+      if (els.trendsRunsCount) {
+        els.trendsRunsCount.textContent = `${(trendsData.runs || []).length} Runs Tracked`;
+      }
+    } catch (err) {
+      console.error("Failed to load trends data", err);
+      if (els.trendsChartContainer) {
+        els.trendsChartContainer.innerHTML = `<div class="trace-empty-state"><p>Error loading trends: ${err.message}</p></div>`;
+      }
+    }
+  }
+
+  function renderTrendsOverview(data) {
+    if (!els.trendsMetricCards) return;
+    const runs = data.runs || [];
+    if (runs.length === 0) {
+      els.trendsMetricCards.innerHTML = `
+        <div class="metric-card">
+          <span class="metric-card-label">CI Evaluation Status</span>
+          <span class="metric-card-value">No Data</span>
+          <span class="metric-card-delta">Run an evaluation to start tracking</span>
+        </div>
+      `;
+      return;
+    }
+
+    const latest = runs[runs.length - 1];
+    const latestSum = latest.summary || {};
+    const latestPR = (latestSum.pass_rate * 100).toFixed(1);
+    const passClass = latestSum.pass_rate >= 0.7 ? "delta-pos" : "delta-neg";
+    const delta = latest.delta_from_previous || {};
+    const prDelta = delta.pass_rate_pct_delta || 0;
+    const prDeltaClass = prDelta > 0 ? "delta-pos" : prDelta < 0 ? "delta-neg" : "delta-neu";
+
+    els.trendsMetricCards.innerHTML = `
+      <div class="metric-card">
+        <span class="metric-card-label">Latest Pass Rate</span>
+        <span class="metric-card-value ${passClass}">${latestPR}%</span>
+        <span class="metric-card-delta ${prDeltaClass}">${prDelta > 0 ? "+" : ""}${prDelta.toFixed(1)}% vs prev commit</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-card-label">Latest Avg Score</span>
+        <span class="metric-card-value">${(latestSum.avg_score || 0).toFixed(3)}</span>
+        <span class="metric-card-delta">${(delta.score_delta > 0 ? "+" : "") + (delta.score_delta || 0).toFixed(3)} delta</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-card-label">Average Latency</span>
+        <span class="metric-card-value">${(latestSum.avg_latency_s || 0).toFixed(2)}s</span>
+        <span class="metric-card-delta">Target &lt; 5.0s</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-card-label">Total CI Runs</span>
+        <span class="metric-card-value">${runs.length}</span>
+        <span class="metric-card-delta">Last Commit: <code>${escapeHTML(latest.short_sha || "N/A")}</code></span>
+      </div>
+    `;
+  }
+
+  function renderTrendsCategoryTable(data) {
+    if (!els.trendsCategoryTable) return;
+    const tbody = els.trendsCategoryTable.querySelector("tbody");
+    const runs = data.runs || [];
+    if (runs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" class="text-muted">No evaluation runs recorded yet.</td></tr>`;
+      return;
+    }
+
+    const latest = runs[runs.length - 1];
+    const cats = latest.summary?.by_category || [];
+
+    tbody.innerHTML = cats
+      .map((c) => {
+        const pr = ((c.pass_rate || 0) * 100).toFixed(1);
+        const statusBadge = c.pass_rate >= 0.70
+          ? `<span class="badge badge-success">✓ Healthy (&ge;70%)</span>`
+          : `<span class="badge badge-danger">⚠️ Needs Attention (&lt;70%)</span>`;
+
+        return `
+          <tr>
+            <td><strong>${escapeHTML(c.category)}</strong></td>
+            <td><strong>${pr}%</strong> (${c.passed}/${c.total})</td>
+            <td>${(c.avg_score || 0).toFixed(3)}</td>
+            <td>${statusBadge}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  function renderTrendsLedgerTable(runs) {
+    if (!els.trendsLedgerTable) return;
+    const tbody = els.trendsLedgerTable.querySelector("tbody");
+    if (runs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-muted">No historical commits recorded.</td></tr>`;
+      return;
+    }
+
+    // Render most recent runs at the top
+    const reversed = [...runs].reverse();
+    tbody.innerHTML = reversed
+      .map((r) => {
+        const sum = r.summary || {};
+        const pr = ((sum.pass_rate || 0) * 100).toFixed(1);
+        const ciPassed = r.ci_passed !== false;
+        const ciBadge = ciPassed
+          ? `<span class="badge badge-success">✓ PASSED</span>`
+          : `<span class="badge badge-danger">✕ FAILED</span>`;
+
+        const delta = r.delta_from_previous || {};
+        const prD = delta.pass_rate_pct_delta;
+        const deltaStr = prD !== undefined && prD !== null
+          ? `<span style="font-size: 0.75rem; color: ${prD > 0 ? "var(--color-success)" : prD < 0 ? "var(--color-danger)" : "var(--text-muted)"};">(${prD > 0 ? "+" : ""}${prD.toFixed(1)}%)</span>`
+          : "";
+
+        return `
+          <tr>
+            <td><code>${escapeHTML(r.short_sha || r.commit_sha?.slice(0, 7) || "local")}</code></td>
+            <td><span class="badge badge-info">${escapeHTML(r.branch || "main")}</span></td>
+            <td><span style="font-size: 0.75rem; color: var(--text-dim);">${r.timestamp ? new Date(r.timestamp).toLocaleString() : "N/A"}</span></td>
+            <td><span style="font-size: 0.8rem;">${escapeHTML(r.commit_message || "Evaluation Run")}</span></td>
+            <td><strong>${pr}%</strong> ${deltaStr}</td>
+            <td>${(sum.avg_score || 0).toFixed(3)}</td>
+            <td>${(sum.avg_latency_s || 0).toFixed(2)}s</td>
+            <td>${ciBadge}</td>
+          </tr>
+        `;
+      })
+      .join("");
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────────
