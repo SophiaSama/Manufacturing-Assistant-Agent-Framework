@@ -71,25 +71,44 @@ def retrieve_documents(
     category: str | list[str] | None,
     k: int = 5,
     user_level: int = 1,
+    cache: Any | None = None,
 ) -> list[dict[str, Any]]:
-    """Run parallel RBAC-filtered similarity search across categories."""
+    """Run parallel RBAC-filtered similarity search across categories.
+
+    When `cache` is provided (or an active cache_scope is set), results are
+    cached per (query, categories, k, user_level) with corpus-version and
+    RBAC scoping (docs/cache-design.md §3.2/§4).
+    """
     categories = normalize_categories(category)
-    results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(len(categories), 4)) as executor:
-        futures = {
-            executor.submit(
-                _search_one_category, store, query, cat, k, user_level
-            ): cat
-            for cat in categories
-        }
-        for future, cat in futures.items():
-            try:
-                results.extend(future.result())
-            except Exception:
-                logger.exception(
-                    "Retrieval failed for query=%r category=%r", query, cat
-                )
-    return results
+
+    def _run() -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=min(len(categories), 4)) as executor:
+            futures = {
+                executor.submit(
+                    _search_one_category, store, query, cat, k, user_level
+                ): cat
+                for cat in categories
+            }
+            for future, cat in futures.items():
+                try:
+                    results.extend(future.result())
+                except Exception:
+                    logger.exception(
+                        "Retrieval failed for query=%r category=%r", query, cat
+                    )
+        return results
+
+    from nga.cache.layers import cached_retrieve
+
+    return cached_retrieve(
+        _run,
+        query=query,
+        categories=categories,
+        k=k,
+        user_level=user_level,
+        cache=cache,
+    )
 
 
 def retrieve_graph_evidence(
@@ -100,17 +119,30 @@ def retrieve_graph_evidence(
     k_entities: int = 5,
     max_hops: int = 2,
     user_level: int = 1,
+    cache: Any | None = None,
 ) -> dict[str, Any]:
-    """Run RBAC-filtered GraphRAG local search."""
-    try:
-        from nga.graphrag.search import build_graph_evidence
-        return build_graph_evidence(
-            graph, query, embeddings,
-            k_entities=k_entities, max_hops=max_hops, user_level=user_level,
-        )
-    except Exception:
-        logger.exception("Graph retrieval failed for query=%r", query)
-        return {"entities": [], "relations": [], "community_summaries": []}
+    """Run RBAC-filtered GraphRAG local search (cached per query params)."""
+    def _run() -> dict[str, Any]:
+        try:
+            from nga.graphrag.search import build_graph_evidence
+            return build_graph_evidence(
+                graph, query, embeddings,
+                k_entities=k_entities, max_hops=max_hops, user_level=user_level,
+            )
+        except Exception:
+            logger.exception("Graph retrieval failed for query=%r", query)
+            return {"entities": [], "relations": [], "community_summaries": []}
+
+    from nga.cache.layers import cached_graph_evidence
+
+    return cached_graph_evidence(
+        _run,
+        query=query,
+        k_entities=k_entities,
+        max_hops=max_hops,
+        user_level=user_level,
+        cache=cache,
+    )
 
 
 def build_retrieval_payload(

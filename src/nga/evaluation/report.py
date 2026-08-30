@@ -56,18 +56,20 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
 def generate_markdown_report(
     results: list[ScoreResult],
     run_label: str = "",
+    cache_mode: str = "cold",
 ) -> str:
     summary = build_summary(results)
     ts = _now_ts()
     lines: list[str] = []
 
-    lines.append(f"# NGA Manufacturing Assistant — Evaluation Report")
+    lines.append("# NGA Manufacturing Assistant — Evaluation Report")
     lines.append(f"\n**Run**: {run_label or ts}  ")
+    lines.append(f"**Cache mode**: {cache_mode}  ")
     lines.append(f"**Generated**: {datetime.now(timezone.utc).isoformat()}\n")
 
     lines.append("## Summary\n")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|---|---|")
+    lines.append("| Metric | Value |")
+    lines.append("|---|---|")
     lines.append(f"| Total Questions | {summary['total']} |")
     lines.append(f"| Passed (≥0.70) | {summary['passed']} |")
     lines.append(f"| **Pass Rate** | **{summary['pass_rate']*100:.1f}%** |")
@@ -115,6 +117,8 @@ def save_report(
     results: list[ScoreResult],
     reports_dir: str = "reports/eval",
     run_label: str = "",
+    cache_mode: str = "cold",
+    cache_summary: dict | None = None,
 ) -> tuple[Path, Path]:
     """Save Markdown report to disk. Returns (md_path, json_path)."""
     ts = _now_ts()
@@ -122,7 +126,7 @@ def save_report(
     out_dir = Path(reports_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    md_content = generate_markdown_report(results, label)
+    md_content = generate_markdown_report(results, label, cache_mode=cache_mode)
     md_path = out_dir / f"{label}.md"
     md_path.write_text(md_content, encoding="utf-8")
 
@@ -131,7 +135,9 @@ def save_report(
     summary = build_summary(results)
     json_data = {
         "run_label": label,
+        "cache_mode": cache_mode,
         "summary": summary,
+        "cache": cache_summary,
         "results": [
             {
                 "id": r.question_id,
@@ -144,6 +150,7 @@ def save_report(
                 "tools_called": r.tools_called,
                 "latency_s": r.latency_s,
                 "error": r.error,
+                "cache_stats": r.cache_stats,
             }
             for r in results
         ],

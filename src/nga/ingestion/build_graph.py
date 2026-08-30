@@ -198,10 +198,10 @@ def main() -> None:
     import argparse
     import sys
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    from nga.config import Settings
-    from nga.providers.factory import make_chat_model
     from langchain_chroma import Chroma
-    from nga.providers.factory import make_embeddings
+
+    from nga.config import Settings
+    from nga.providers.factory import make_chat_model, make_embeddings
 
     parser = argparse.ArgumentParser(description="Build GraphRAG knowledge graph")
     parser.add_argument(

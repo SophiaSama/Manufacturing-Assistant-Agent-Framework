@@ -14,7 +14,11 @@ from langchain_core.messages import HumanMessage, ToolMessage
 
 from nga.evaluation.report import build_summary, save_report
 from nga.evaluation.scoring import ScoreResult, score_answer
-from nga.models.answer_schema import FinalAnswer, parse_final_answer, render_final_answer
+from nga.models.answer_schema import (
+    FinalAnswer,
+    parse_final_answer,
+    render_final_answer,
+)
 
 logger = logging.getLogger("nga.evaluation.eval_runner")
 
@@ -93,8 +97,17 @@ def run_single_eval_question(
     question_data: dict[str, Any],
     role: str = "manager",
     judge: Callable[[str, str], int] | None = None,
+    cache: Any | None = None,
+    cache_env: str = "eval",
 ) -> ScoreResult:
-    """Execute a single evaluation question on the agent graph and score it."""
+    """Execute a single evaluation question on the agent graph and score it.
+
+    When `cache` is provided, the question runs inside a cache_scope with
+    env=cache_env so tools resolve the cache via contextvars (eval hot mode).
+    Cache metrics are snapshotted before/after and attached to the result.
+    """
+    from nga.cache.context import cache_scope
+
     q_id = question_data.get("id", "UNKNOWN")
     category = question_data.get("category", "general")
     question_text = question_data.get("question", "")
@@ -120,43 +133,54 @@ def run_single_eval_question(
     error_msg: str | None = None
     question_parts: list[str] = []
     collected_messages: list[Any] = []
+    cache_stats: dict | None = None
 
-    try:
-        for update in agent_graph.stream(
-            initial_state,
-            config={"configurable": {"thread_id": thread_id}},
-            stream_mode="updates",
-        ):
-            if not isinstance(update, dict):
-                continue
-            prepare_update = update.get("prepare")
-            if prepare_update and isinstance(prepare_update.get("question_parts"), list):
-                question_parts = [
-                    p for p in prepare_update["question_parts"] if isinstance(p, str) and p.strip()
-                ]
+    def _stream():
+        nonlocal answer_text, error_msg, question_parts, collected_messages, cache_stats
+        before = cache.snapshot() if cache is not None else None
+        try:
+            for update in agent_graph.stream(
+                initial_state,
+                config={"configurable": {"thread_id": thread_id}},
+                stream_mode="updates",
+            ):
+                if not isinstance(update, dict):
+                    continue
+                prepare_update = update.get("prepare")
+                if prepare_update and isinstance(prepare_update.get("question_parts"), list):
+                    question_parts = [
+                        p for p in prepare_update["question_parts"] if isinstance(p, str) and p.strip()
+                    ]
 
-            agent_update = update.get("agent")
-            if agent_update and "messages" in agent_update:
-                collected_messages.extend(agent_update["messages"])
+                agent_update = update.get("agent")
+                if agent_update and "messages" in agent_update:
+                    collected_messages.extend(agent_update["messages"])
 
-            tools_update = update.get("tools")
-            if tools_update and "messages" in tools_update:
-                collected_messages.extend(tools_update["messages"])
+                tools_update = update.get("tools")
+                if tools_update and "messages" in tools_update:
+                    collected_messages.extend(tools_update["messages"])
 
-            synthesis_update = update.get("synthesis")
-            if synthesis_update:
-                answer_text = _render_agent_response(synthesis_update, question_parts)
-                if "messages" in synthesis_update:
-                    collected_messages.extend(synthesis_update["messages"])
+                synthesis_update = update.get("synthesis")
+                if synthesis_update:
+                    answer_text = _render_agent_response(synthesis_update, question_parts)
+                    if "messages" in synthesis_update:
+                        collected_messages.extend(synthesis_update["messages"])
 
-        if not answer_text and collected_messages:
-            last = collected_messages[-1]
-            answer_text = last.content if hasattr(last, "content") else str(last)
+            if not answer_text and collected_messages:
+                last = collected_messages[-1]
+                answer_text = last.content if hasattr(last, "content") else str(last)
+        except Exception as exc:
+            logger.exception("Eval question %s failed with exception", q_id)
+            error_msg = str(exc)
+            answer_text = ""
+        if cache is not None and before is not None:
+            cache_stats = cache.metrics.delta(before, cache.snapshot())
 
-    except Exception as exc:
-        logger.exception("Eval question %s failed with exception", q_id)
-        error_msg = str(exc)
-        answer_text = ""
+    if cache is not None:
+        with cache_scope(cache, env=cache_env):
+            _stream()
+    else:
+        _stream()
 
     latency_s = round(time.perf_counter() - t0, 3)
     tools_called, tool_outputs = _extract_tools_and_outputs(collected_messages)
@@ -174,6 +198,7 @@ def run_single_eval_question(
         judge=judge,
         latency_s=latency_s,
         error=error_msg,
+        cache_stats=cache_stats,
     )
 
 
@@ -185,16 +210,34 @@ def run_evaluation_suite(
     role: str = "manager",
     judge: Callable[[str, str], int] | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    cache_mode: str = "cold",
+    eval_cache_db_path: str | None = None,
 ) -> tuple[dict[str, Any], list[ScoreResult], Path, Path]:
-    """Run full evaluation suite, stream progress, compute summary, and save reports."""
+    """Run full evaluation suite, stream progress, compute summary, and save reports.
+
+    cache_mode: "cold" (default, cache bypassed) or "hot" (uses eval cache
+    DB, warm across questions — measures realistic repeated-query behavior).
+    """
+    from nga.cache import NgaCache
+
+    cache: NgaCache | None = None
+    if cache_mode == "hot" and eval_cache_db_path:
+        cache = NgaCache(eval_cache_db_path, env="eval")
+        cache.reset_metrics()
+
     label = run_label or f"eval_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     total = len(questions)
     results: list[ScoreResult] = []
 
-    logger.info("Starting evaluation suite '%s' with %d questions", label, total)
+    logger.info(
+        "Starting evaluation suite '%s' with %d questions (cache_mode=%s)",
+        label, total, cache_mode,
+    )
 
     for idx, q in enumerate(questions, start=1):
-        result = run_single_eval_question(agent_graph, q, role=role, judge=judge)
+        result = run_single_eval_question(
+            agent_graph, q, role=role, judge=judge, cache=cache, cache_env="eval"
+        )
         results.append(result)
 
         if progress_callback:
@@ -211,11 +254,21 @@ def run_evaluation_suite(
                 "error": result.error,
             })
 
-    md_path, json_path = save_report(results, reports_dir=reports_dir, run_label=label)
+    cache_summary = _aggregate_cache_stats(results) if cache is not None else None
+    if cache is not None:
+        cache.close()
+
+    md_path, json_path = save_report(
+        results, reports_dir=reports_dir, run_label=label,
+        cache_mode=cache_mode, cache_summary=cache_summary,
+    )
     summary = build_summary(results)
     summary["run_label"] = label
     summary["md_report_path"] = str(md_path)
     summary["json_report_path"] = str(json_path)
+    summary["cache_mode"] = cache_mode
+    if cache_summary:
+        summary["cache"] = cache_summary
 
     if progress_callback:
         progress_callback({
@@ -225,6 +278,30 @@ def run_evaluation_suite(
         })
 
     return summary, results, md_path, json_path
+
+
+def _aggregate_cache_stats(results: list[ScoreResult]) -> dict[str, Any]:
+    """Aggregate per-question cache stats into per-layer totals."""
+    layers = ("emb", "retr", "sql")
+    agg: dict[str, dict[str, float]] = {
+        layer: {"hits": 0, "misses": 0, "ms": 0.0} for layer in layers
+    }
+    for r in results:
+        for layer in layers:
+            stat = (r.cache_stats or {}).get(layer, {})
+            agg[layer]["hits"] += stat.get("hits", 0)
+            agg[layer]["misses"] += stat.get("misses", 0)
+            agg[layer]["ms"] += stat.get("ms", 0.0)
+    out: dict[str, Any] = {}
+    for layer, s in agg.items():
+        total = s["hits"] + s["misses"]
+        out[layer] = {
+            "hits": int(s["hits"]),
+            "misses": int(s["misses"]),
+            "hit_rate": round(s["hits"] / max(total, 1), 3),
+            "total_ms": round(s["ms"], 2),
+        }
+    return out
 
 
 def list_evaluation_reports(reports_dir: str = "reports/eval") -> list[dict[str, Any]]:
@@ -407,13 +484,16 @@ def compare_evaluation_runs(
         "run_a": {
             "label": label_a,
             "summary": sum_a,
+            "cache_mode": report_a.get("cache_mode", "unknown"),
         },
         "run_b": {
             "label": label_b,
             "summary": sum_b,
+            "cache_mode": report_b.get("cache_mode", "unknown"),
         },
         "summary_delta": summary_delta,
         "category_deltas": category_deltas,
+        "cache_improvement": _compute_cache_improvement(report_a, report_b, sum_a, sum_b),
         "counts": {
             "regressions": len(regressions),
             "improvements": len(improvements),
@@ -426,4 +506,58 @@ def compare_evaluation_runs(
         "maintained_pass": maintained_pass,
         "maintained_fail": maintained_fail,
         "all_questions": all_question_comparisons,
+    }
+
+
+def _compute_cache_improvement(
+    report_a: dict[str, Any],
+    report_b: dict[str, Any],
+    sum_a: dict[str, Any],
+    sum_b: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Compute the before/after cache improvement block (design §7.4.1).
+
+    Requires one run to be cache-cold (baseline) and the other cache-hot
+    (candidate). Returns None when the pairing is not meaningful.
+    """
+    mode_a = report_a.get("cache_mode", "unknown")
+    mode_b = report_b.get("cache_mode", "unknown")
+    if {mode_a, mode_b} != {"cold", "hot"}:
+        return None
+
+    cold, hot = (sum_a, sum_b) if mode_a == "cold" else (sum_b, sum_a)
+    hot_report = report_b if mode_b == "hot" else report_a
+
+    t_cold = float(cold.get("avg_latency_s", 0.0))
+    t_hot = float(hot.get("avg_latency_s", 0.0))
+    latency_reduction = round((1 - t_hot / max(t_cold, 1e-9)) * 100, 2)
+
+    score_cold = float(cold.get("avg_score", 0.0))
+    score_hot = float(hot.get("avg_score", 0.0))
+    pass_cold = int(cold.get("passed", 0))
+    pass_hot = int(hot.get("passed", 0))
+
+    cache_summary = hot_report.get("cache", {}) or {}
+    hit_rates = {
+        layer: float(cache_summary.get(layer, {}).get("hit_rate", 0.0))
+        for layer in ("emb", "retr", "sql")
+    }
+    layer_ms = {
+        layer: float(cache_summary.get(layer, {}).get("total_ms", 0.0))
+        for layer in ("emb", "retr", "sql")
+    }
+
+    return {
+        "latency_reduction_pct": latency_reduction,
+        "quality_parity": {
+            "score_delta": round(score_hot - score_cold, 3),
+            "pass_delta": pass_hot - pass_cold,
+        },
+        "hit_rate": hit_rates,
+        "layer_total_ms": layer_ms,
+        "note": (
+            "latency_reduction_pct compares end-to-end avg latency between the "
+            "cold baseline and hot candidate run; per-layer reduction requires "
+            "per-layer instrumentation on the cold run (see docs/cache-design.md §7.4.1)."
+        ),
     }

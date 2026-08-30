@@ -64,6 +64,15 @@ class Settings:
     embedding_poll_interval: float
     embedding_max_wait: float
     embedding_strategy: str  # "batch" | "sequential"
+    # Cache (docs/cache-design.md)
+    cache_enabled: bool
+    cache_mode: str  # "cold" | "hot" (eval); prod always serves hot when enabled
+    cache_db_path: str
+    cache_eval_db_path: str
+    cache_ttl_emb_s: float
+    cache_ttl_retr_s: float
+    cache_ttl_sql_s: float
+    cache_max_entries: int
 
     @property
     def provider(self) -> str:
@@ -158,4 +167,15 @@ class Settings:
                 os.getenv("EMBEDDING_MAX_WAIT", "1800")
             ),
             embedding_strategy=_parse_embedding_strategy(),
+            cache_enabled=os.getenv("CACHE_ENABLED", "false").lower()
+            in ("1", "true", "yes"),
+            cache_mode=(os.getenv("CACHE_MODE", "cold") or "cold").strip().lower(),
+            cache_db_path=os.getenv("CACHE_DB_PATH", "data/cache/nga_cache.db"),
+            cache_eval_db_path=os.getenv(
+                "CACHE_EVAL_DB_PATH", "data/cache/eval_cache.db"
+            ),
+            cache_ttl_emb_s=float(os.getenv("CACHE_TTL_EMB_S", "86400")),
+            cache_ttl_retr_s=float(os.getenv("CACHE_TTL_RETR_S", "3600")),
+            cache_ttl_sql_s=float(os.getenv("CACHE_TTL_SQL_S", "300")),
+            cache_max_entries=int(os.getenv("CACHE_MAX_ENTRIES", "100000")),
         )

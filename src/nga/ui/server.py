@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
-import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -20,6 +18,7 @@ from langchain_chroma import Chroma
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
+from nga.cache import CachedEmbeddings, make_cache_from_settings
 from nga.config import Settings
 from nga.evaluation.ci_tracker import (
     generate_svg_trend_chart,
@@ -41,12 +40,15 @@ from nga.memory.decision_log import (
     get_decision_by_id,
     get_decisions,
     init_decision_log,
-    insert_recommendation,
     update_decision,
 )
-from nga.models.answer_schema import FinalAnswer, parse_final_answer, render_final_answer
+from nga.models.answer_schema import (
+    FinalAnswer,
+    parse_final_answer,
+    render_final_answer,
+)
 from nga.providers.factory import make_embeddings
-from nga.rag_agent.rbac import ACCESS_LEVELS, ROLE_PERMISSIONS, SYSTEM_PROMPTS
+from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
 
 logger = logging.getLogger("nga.ui.server")
@@ -100,6 +102,7 @@ class EvalRunRequest(BaseModel):
     smoke_test: bool = Field(False, description="Run quick 5-question smoke test across categories")
     run_label: str | None = Field(None, description="Custom run label")
     role: str = Field("manager", description="Role for evaluation execution")
+    cache_mode: str = Field("cold", description="'cold' (default) or 'hot' (eval cache enabled)")
 
 
 class EvalCompareRequest(BaseModel):
@@ -129,8 +132,17 @@ class AppContext:
         self.settings = Settings.from_env()
         init_decision_log(self.settings.app_state_db_path)
 
+        self.cache = make_cache_from_settings(self.settings, env="prod")
+        if self.cache is not None:
+            logger.info("cache enabled env=prod db=%s", self.settings.cache_db_path)
+
         try:
             self.embeddings = make_embeddings(self.settings)
+            if self.cache is not None:
+                self.embeddings = CachedEmbeddings(
+                    self.embeddings, cache=self.cache,
+                    model_id=self.settings.embedding_model,
+                )
             self.vector_store = Chroma(
                 collection_name="nga_reference_docs",
                 embedding_function=self.embeddings,
@@ -145,7 +157,7 @@ class AppContext:
             logger.warning("Graph data init warning: %s", exc)
 
         self.checkpointer = build_checkpointer(self.settings.app_state_db_path)
-        self.sql_tool = make_sql_tool(self.settings.nga_db_path)
+        self.sql_tool = make_sql_tool(self.settings.nga_db_path, cache=self.cache)
 
         # Build orchestrator graph for each role
         for role_name, access_lvl in ACCESS_LEVELS.items():
@@ -155,6 +167,7 @@ class AppContext:
                     graph=self.graph_data,
                     embeddings=self.embeddings,
                     user_level=access_lvl,
+                    cache=self.cache,
                 )
             else:
                 retrieval_tool = None
@@ -600,12 +613,14 @@ def create_app() -> FastAPI:
         if not questions:
             raise HTTPException(status_code=400, detail="No evaluation questions match criteria")
 
-        logger.info("Executing eval run: category=%s, count=%d, smoke_test=%s", request.category, len(questions), request.smoke_test)
+        logger.info("Executing eval run: category=%s, count=%d, smoke_test=%s, cache_mode=%s", request.category, len(questions), request.smoke_test, request.cache_mode)
         summary, results, md_path, json_path = run_evaluation_suite(
             agent_graph=graph,
             questions=questions,
             run_label=request.run_label or "",
             role=request.role,
+            cache_mode=request.cache_mode,
+            eval_cache_db_path=ctx.settings.cache_eval_db_path if request.cache_mode == "hot" else None,
         )
 
         # Automatically record to history ledger for trend tracking

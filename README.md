@@ -158,6 +158,20 @@ uv run python -m nga.evaluation.ci_tracker \
   --threshold 0.70
 ```
 
+### 3. Caching (docs/cache-design.md)
+The agent has an optional, SQLite-backed, env-namespaced cache (`src/nga/cache/`):
+
+| Layer | What it caches | Key scoping |
+|---|---|---|
+| **L0 emb** | text → embedding vector | model id, corpus version |
+| **L1 retr** | query → RBAC-filtered chunks + graph evidence | query, categories, k, **user_level**, corpus version |
+| **L2 sql** | validated SELECT → rows | canonical SQL, DB `data_version` etag |
+
+- **Default off** (`CACHE_ENABLED=false`) — zero behavior change when disabled.
+- **Eval is cache-cold by default**; run `--cache-mode hot` (or `cache_mode: "hot"` in the eval API) to measure realistic repeated-query behavior against `data/cache/eval_cache.db`.
+- Eval reports record `cache_mode` + per-layer hit rates; `compare_evaluation_runs` emits a `cache_improvement` block (`latency_reduction_pct`, `quality_parity`, `hit_rate`) for the paired cold/hot protocol.
+- Maintenance: `uv run python -m nga.cache.cli stats|clear --env prod|eval [--layer emb|retr|sql]`
+
 ---
 
 ## 🧪 Comprehensive Test Suites & Benchmarks
