@@ -35,6 +35,7 @@ from nga.evaluation.eval_runner import (
 )
 from nga.graph.orchestrator import build_orchestrator
 from nga.ingestion.build_graph import load_graph
+from nga.ingestion.build_vector_store import open_vector_store
 from nga.memory.checkpointer import build_checkpointer
 from nga.memory.decision_log import (
     get_decision_by_id,
@@ -143,10 +144,8 @@ class AppContext:
                     self.embeddings, cache=self.cache,
                     model_id=self.settings.embedding_model,
                 )
-            self.vector_store = Chroma(
-                collection_name="nga_reference_docs",
-                embedding_function=self.embeddings,
-                persist_directory=self.settings.vector_store_dir,
+            self.vector_store = open_vector_store(
+                self.settings, embeddings=self.embeddings,
             )
         except Exception as exc:
             logger.warning("Vector store init warning: %s", exc)

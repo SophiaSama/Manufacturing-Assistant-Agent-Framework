@@ -60,6 +60,7 @@ def _search_one_category(
             "text": doc.page_content,
             "access_level": doc.metadata.get("access_level", "operator"),
             "level_rank": doc.metadata.get("level_rank", 1),
+            "corpus_source": doc.metadata.get("corpus_source", "canonical"),
         }
         for doc in docs
     ]
@@ -159,6 +160,7 @@ def build_retrieval_payload(
             "section": r.get("section"),
             "chunk_id": r.get("chunk_id"),
             "category": r.get("category"),
+            "corpus_source": r.get("corpus_source", "canonical"),
         }
         for r in results
     ]
@@ -186,10 +188,13 @@ def format_retrieval_results(
             doc_id = r.get("doc_id", "")
             section = r.get("section", "")
             cat = r.get("category", "")
+            source = r.get("corpus_source", "canonical")
             prefix = f"[{cat}]" if cat else ""
             ref = f"[{doc_id}]" if doc_id else ""
             sec = f" §{section}" if section else ""
-            lines.append(f"{prefix}{ref}{sec} {r['text']}")
+            src_tag = "[VARIANT]" if source == "variant" else ""
+            src = f" {src_tag}" if src_tag else ""
+            lines.append(f"{prefix}{src}{ref}{sec} {r['text']}")
         block = "\n\n".join(lines)
 
     if graph_evidence:

@@ -6,13 +6,13 @@ import argparse
 import logging
 import uuid
 
-from langchain_chroma import Chroma
 from langchain_core.messages import HumanMessage
 
 from nga.cache import CachedEmbeddings, make_cache_from_settings
 from nga.config import Settings
 from nga.graph.orchestrator import build_orchestrator
 from nga.ingestion.build_graph import load_graph
+from nga.ingestion.build_vector_store import open_vector_store
 from nga.memory.checkpointer import build_checkpointer
 from nga.memory.decision_log import init_decision_log
 from nga.models.answer_schema import (
@@ -130,11 +130,7 @@ def main(argv: list[str] | None = None) -> None:
     embeddings = make_embeddings(settings)
     if cache is not None:
         embeddings = CachedEmbeddings(embeddings, cache=cache, model_id=settings.embedding_model)
-    store = Chroma(
-        collection_name="nga_reference_docs",
-        embedding_function=embeddings,
-        persist_directory=settings.vector_store_dir,
-    )
+    store = open_vector_store(settings, embeddings=embeddings)
 
     graph_data = load_graph(settings.graph_store_dir)
     role = args.role

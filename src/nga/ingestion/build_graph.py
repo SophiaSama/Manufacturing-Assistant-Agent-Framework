@@ -201,6 +201,11 @@ def main() -> None:
     from langchain_chroma import Chroma
 
     from nga.config import Settings
+    from nga.ingestion.build_vector_store import (
+        CORPUS_PROFILES,
+        profile_collection_name,
+        profile_store_dir,
+    )
     from nga.providers.factory import make_chat_model, make_embeddings
 
     parser = argparse.ArgumentParser(description="Build GraphRAG knowledge graph")
@@ -212,9 +217,16 @@ def main() -> None:
         help="Max number of chunks to process (0 or omit = all). "
              "Overrides GRAPH_MAX_DOCS env var.",
     )
+    parser.add_argument(
+        "--profile",
+        choices=CORPUS_PROFILES,
+        default=None,
+        help="Corpus profile (default: from CORPUS_PROFILE env, 'main')",
+    )
     args = parser.parse_args()
 
     settings = Settings.from_env()
+    profile = args.profile or settings.corpus_profile
 
     # Resolve max_docs: CLI flag > env var (GRAPH_MAX_DOCS) > all docs
     if args.max_docs is not None:
@@ -224,12 +236,13 @@ def main() -> None:
     else:
         max_docs = None  # process all
 
-    # Load vector store documents for graph extraction
+    # Load vector store documents for graph extraction (profile-aware)
     embeddings = make_embeddings(settings)
+
     store = Chroma(
-        collection_name="nga_reference_docs",
+        collection_name=profile_collection_name(profile),
         embedding_function=embeddings,
-        persist_directory=settings.vector_store_dir,
+        persist_directory=profile_store_dir(settings, profile),
     )
     all_docs = store.get(include=["documents", "metadatas"])
     from langchain_core.documents import Document

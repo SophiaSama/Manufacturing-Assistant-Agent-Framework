@@ -16,8 +16,19 @@ os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 
 _VALID_ENVIRONMENTS = {"local": "Local", "cloud": "Cloud"}
 
+_VALID_CORPUS_PROFILES = {"main", "variant", "conflict"}
+
 
 _VALID_EMBEDDING_STRATEGIES = {"batch", "sequential"}
+
+
+def _parse_corpus_profile() -> str:
+    raw = (os.getenv("CORPUS_PROFILE", "main") or "main").strip().lower()
+    if raw not in _VALID_CORPUS_PROFILES:
+        raise ValueError(
+            f"CORPUS_PROFILE must be one of {sorted(_VALID_CORPUS_PROFILES)}, got: {raw!r}"
+        )
+    return raw
 
 
 def _parse_embedding_strategy() -> str:
@@ -46,6 +57,11 @@ class Settings:
     documents_dir: str
     graph_store_dir: str
     graph_max_docs: int
+    # Corpus profile (main | variant | conflict) — docs/variant-corpus-ingestion-design.md
+    corpus_profile: str
+    variant_corpus_dir: str
+    variant_vector_store_dir: str
+    conflict_vector_store_dir: str
     langsmith_tracing_enabled: bool
     # RBAC JWT
     jwt_secret: str
@@ -136,6 +152,14 @@ class Settings:
             documents_dir=os.getenv("DOCUMENTS_DIR", ""),  # auto-discovered if empty
             graph_store_dir=os.getenv("GRAPH_STORE_DIR", "data/graph_store"),
             graph_max_docs=int(os.getenv("GRAPH_MAX_DOCS", "0")),
+            corpus_profile=_parse_corpus_profile(),
+            variant_corpus_dir=os.getenv("VARIANT_CORPUS_DIR", "variant-corpus"),
+            variant_vector_store_dir=os.getenv(
+                "VARIANT_VECTOR_STORE_DIR", "data/variant_vector_store"
+            ),
+            conflict_vector_store_dir=os.getenv(
+                "CONFLICT_VECTOR_STORE_DIR", "data/conflict_vector_store"
+            ),
             langsmith_tracing_enabled=tracing_enabled,
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret"),
             jwt_dev_mode=os.getenv("JWT_DEV_MODE", "true").lower() == "true",
