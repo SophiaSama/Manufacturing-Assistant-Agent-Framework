@@ -27,10 +27,17 @@ from nga.graph.orchestrator import build_orchestrator
 from nga.ingestion.build_graph import load_graph
 from nga.memory.checkpointer import build_checkpointer
 from nga.memory.decision_log import init_decision_log
-from nga.models.answer_schema import FinalAnswer, parse_final_answer, render_final_answer
+from nga.models.answer_schema import (
+    FinalAnswer,
+    parse_final_answer,
+    render_final_answer,
+)
 from nga.providers.factory import make_chat_model, make_embeddings
 from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
+
+# Benchmark requires multi-hop + tool use + structured output → 'standard'
+pytestmark = [pytest.mark.required_tier("standard")]
 
 # ── Fixture: Load questions ────────────────────────────────────────────────────
 

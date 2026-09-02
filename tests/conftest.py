@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 # Mock HITL approval to auto-approve for all integration tests
@@ -17,11 +19,103 @@ def pytest_addoption(parser):
         default=False,
         help="Enable LLM-as-judge scoring (slower, requires API key)",
     )
+    parser.addoption(
+        "--probe-capability",
+        action="store_true",
+        default=False,
+        help="Run a runtime model probe to confirm/upgrade the capability tier",
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "required_tier(tier): skip test unless the active model meets tier "
+        "(basic|standard|strong) — docs/model-capability-gating-design.md",
+    )
+
+
+def _active_model_id() -> tuple[str | None, str]:
+    """Return (model_id, provider) from the environment (Settings)."""
+    from nga.config import Settings
+
+    try:
+        settings = Settings.from_env()
+    except Exception:
+        return None, "local"
+    if settings.provider == "ollama":
+        return settings.ollama_chat_model or None, "ollama"
+    return settings.openrouter_model, "openrouter"
+
+
+def _resolve_active_tier(probe: bool) -> str:
+    """Resolve the active capability tier once per session."""
+    from nga.evaluation.capability import (
+        resolve_tier,
+    )
+
+    model_id, provider = _active_model_id()
+    override = os.getenv("MODEL_CAPABILITY_OVERRIDE") or None
+    tier = resolve_tier(model_id, provider, override=override)
+
+    if probe and tier == "basic" and provider == "ollama":
+        # Runtime probe: try a trivial structured call; upgrade to standard on success.
+        if _probe_model_works():
+            tier = "standard"
+    return tier
+
+
+def _probe_model_works() -> bool:
+    """Cheap probe: ask the chat model for strict JSON output."""
+    from nga.config import Settings
+    from nga.providers.factory import make_chat_model
+
+    try:
+        settings = Settings.from_env()
+        llm = make_chat_model(settings)
+        response = llm.invoke('Reply with ONLY this JSON: {"ok": true}')
+        text = str(response.content) if hasattr(response, "content") else str(response)
+        return '"ok"' in text and "true" in text
+    except Exception as exc:
+        print(f"[capability probe] failed: {exc}")
+        return False
 
 
 @pytest.fixture(scope="session")
 def use_judge(request):
     return request.config.getoption("--judge")
+
+
+@pytest.fixture(scope="session")
+def active_capability(request):
+    """Resolved capability tier for the configured model (basic|standard|strong)."""
+    return _resolve_active_tier(bool(request.config.getoption("--probe-capability")))
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip tests whose required_tier exceeds the active model's tier."""
+    from nga.evaluation.capability import describe_reason, tier_meets
+
+    marked = [i for i in items if i.get_closest_marker("required_tier")]
+    if not marked:
+        return
+
+    active = _resolve_active_tier(bool(config.getoption("--probe-capability")))
+    skipped = 0
+    for item in marked:
+        marker = item.get_closest_marker("required_tier")
+        required = marker.args[0] if marker.args else None
+        if required and not tier_meets(active, required):
+            model_id, _ = _active_model_id()
+            reason = describe_reason(active, required, model_id)
+            item.add_marker(pytest.mark.skip(reason=reason))
+            skipped += 1
+    if skipped:
+        print(
+            f"[capability] active tier={active}; skipped {skipped} "
+            f"integration test(s) below requirement"
+        )
+
 
 
 # ── Shared integration test fixtures ───────────────────────────────────────────

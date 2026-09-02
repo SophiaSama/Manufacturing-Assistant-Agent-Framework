@@ -66,7 +66,8 @@ def resolve_tier(model_id: str | None, *, provider: str) -> str:
     #    claude-haiku → standard; claude-sonnet/opus, gpt-4o/4.1, gemini-1.5/2.5-pro → strong
     #    default cloud unknown → standard (conservative pass)
     # 3. local: parse parameter size from name regex (\\d+(?:\\.\\d+)?[bB])
-    #    < 3B → basic | 3B..6B → standard | ≥ 7B → strong
+    #    < 4B → basic | 4B..7B → standard | ≥ 7B → strong
+    #    (evidence: llama3.2:3b at 3.21B fails integration, so <4B is gated out)
     # 4. unknown → basic (conservative skip)
 ```
 
