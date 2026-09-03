@@ -138,19 +138,22 @@ def agent_graph(settings, tmp_path_factory):
 def conflict_agent_graph(settings, tmp_path_factory):
     """Build an agent graph over the CONFLICT corpus profile.
 
-    Ingests canonical + the 8 differing variant files so conflict-detection
-    tests surface planted inconsistencies (docs/variant-corpus-ingestion-design.md).
-    Skips when the conflict store cannot be built (no embedding provider).
+    Reuses a pre-built conflict store (data/conflict_vector_store) or builds
+    one on first use. Skips when the store cannot be built/loaded (no
+    embedding provider).
     """
     from pathlib import Path
 
     from nga.ingestion.build_vector_store import build_vector_store
 
-    base_dir = Path(settings.nga_db_path).parent.parent
-    try:
-        build_vector_store(settings, base_dir=base_dir, profile="conflict")
-    except Exception as exc:
-        pytest.skip(f"conflict vector store unavailable: {exc}")
+    store_dir = Path(settings.conflict_vector_store_dir)
+    store_ready = (store_dir / "chroma.sqlite3").exists()
+    if not store_ready:
+        base_dir = Path(settings.nga_db_path).parent.parent
+        try:
+            build_vector_store(settings, base_dir=base_dir, profile="conflict")
+        except Exception as exc:
+            pytest.skip(f"conflict vector store unavailable: {exc}")
     return _build_graph(settings, tmp_path_factory, profile="conflict")
 
 

@@ -84,6 +84,7 @@ def retrieve_documents(
 
     def _run() -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
+        errors: list[Exception] = []
         with ThreadPoolExecutor(max_workers=min(len(categories), 4)) as executor:
             futures = {
                 executor.submit(
@@ -94,10 +95,31 @@ def retrieve_documents(
             for future, cat in futures.items():
                 try:
                     results.extend(future.result())
-                except Exception:
-                    logger.exception(
-                        "Retrieval failed for query=%r category=%r", query, cat
+                except Exception as exc:
+                    errors.append(exc)
+                    logger.debug(
+                        "Retrieval failed for query=%r category=%r: %s",
+                        query, cat, exc,
                     )
+        if errors and len(errors) >= len(categories):
+            # All categories failed — surface the likely cause loudly instead
+            # of silently returning empty context (agent would answer blind).
+            from nga.ingestion.build_vector_store import _is_dimension_mismatch
+
+            dim_errors = [e for e in errors if _is_dimension_mismatch(e)]
+            if dim_errors:
+                logger.error(
+                    "ALL retrieval categories failed: embedding dimension "
+                    "mismatch for query=%r. The vector store was built with a "
+                    "different embedding model than the runtime EMBEDDING_MODEL "
+                    "— rebuild the store with the matching model.",
+                    query,
+                )
+            else:
+                logger.error(
+                    "ALL retrieval categories failed for query=%r: %s",
+                    query, errors[0],
+                )
         return results
 
     from nga.cache.layers import cached_retrieve
