@@ -173,7 +173,8 @@ class AppContext:
 
             if retrieval_tool is not None:
                 self.agent_graphs[role_name] = build_orchestrator(
-                    self.settings, self.checkpointer, self.sql_tool, retrieval_tool
+                    self.settings, self.checkpointer, self.sql_tool, retrieval_tool,
+                    approver=_server_approver,
                 )
 
         self.initialized = True
@@ -185,6 +186,23 @@ class AppContext:
         if role_norm not in self.agent_graphs:
             role_norm = "operator"
         return self.agent_graphs.get(role_norm)
+
+
+def _server_approver(recommendation_summary: str, **kwargs) -> tuple[str, str | None]:
+    """Non-interactive approver for the UI server.
+
+    A server has no TTY; the interactive input() approver would raise
+    EOFError and crash the request. Recommendations are logged to the
+    decision log and marked 'pending' for manual review instead of being
+    auto-approved (safety-conservative).
+    """
+    logger.info(
+        "HITL recommendation recorded for manual review "
+        "(class_a_alert=%s): %s",
+        kwargs.get("class_a_alert", False),
+        str(recommendation_summary)[:300],
+    )
+    return "pending", "awaiting manual review (server)"
 
 
 ctx = AppContext()
