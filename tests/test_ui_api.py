@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,7 +18,7 @@ from nga.memory.decision_log import (
     insert_recommendation,
     update_decision,
 )
-from nga.ui.server import app, create_app
+from nga.ui.server import app
 
 
 @pytest.fixture
@@ -109,6 +109,7 @@ def test_hil_action_api(client, monkeypatch):
         )
 
         import dataclasses
+
         from nga.ui.server import ctx
         ctx.setup()
         new_settings = dataclasses.replace(ctx.settings, app_state_db_path=db_path)
@@ -215,7 +216,7 @@ def test_logs_endpoint(client):
     assert res.status_code == 200
     data = res.json()
     assert "logs" in data
-    assert any("Test log message" in l["message"] for l in data["logs"])
+    assert any("Test log message" in log["message"] for log in data["logs"])
 
 
 def test_eval_reports_and_compare_api(client, monkeypatch):
@@ -236,8 +237,8 @@ def test_eval_reports_and_compare_api(client, monkeypatch):
         (reports_dir / "run_b.json").write_text(json.dumps(report_b), encoding="utf-8")
 
         # Monkeypatch reports_dir in server functions
-        from nga.evaluation import eval_runner
         import nga.ui.server as server_mod
+        from nga.evaluation import eval_runner
         monkeypatch.setattr(server_mod, "list_evaluation_reports", lambda: eval_runner.list_evaluation_reports(str(reports_dir)))
         monkeypatch.setattr(server_mod, "get_evaluation_report", lambda label: eval_runner.get_evaluation_report(label, str(reports_dir)))
 

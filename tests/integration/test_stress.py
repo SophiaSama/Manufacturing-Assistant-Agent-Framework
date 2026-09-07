@@ -18,7 +18,6 @@ from nga.memory.decision_log import (
     insert_recommendation,
     update_decision,
 )
-from nga.models.answer_schema import FinalAnswer, parse_final_answer, render_final_answer
 from nga.ui.server import app, ctx
 
 
@@ -229,7 +228,6 @@ def test_adversarial_malformed_and_oversized_payloads(client, monkeypatch):
 
 def test_tool_loop_detection_under_recursion_stress():
     """Verify loop detection node helper handles repeated identical tool calls gracefully."""
-    from nga.graph.nodes import extract_question_parts, extract_recommendation, is_class_a_defect
     from nga.graph.orchestrator import _tool_loop_detected
 
     # Create mock message sequence with repeated identical tool calls
