@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11, langchain `Document`/`RecursiveCharacterTextSplitter`, ChromaDB, `hashlib`/`shutil`/`os.replace` (registry), pytest, ruff.
 
-**Spec:** `docs/superpowers/specs/2026-09-07-graph-rag-reference-architecture-design.md` — this plan implements §4 (contracts) and §5 (Workstream A) only. Subsequent workstreams (B–E) get their own plans after review.
+**Spec:** `docs/2026-09-07-graph-rag-reference-architecture-design.md` — this plan implements §4 (contracts) and §5 (Workstream A) only. Subsequent workstreams (B–E) get their own plans after review.
 
 ## Global Constraints
 

@@ -4,7 +4,7 @@
 **Owners:** Platform/Agent team
 **Drivers (ranked):** C — production-grade reference pattern; B — latency/cost at query time; A — retrieval quality ceiling
 **Fidelity frame:** Blueprint with seams — ideal production components defined behind clean interfaces; local stand-ins used where the existing stack can support them honestly; full-fidelity infrastructure explicitly marked **deferred**.
-**Related docs:** `docs/cache-design.md`, `docs/variant-corpus-ingestion-design.md`, `docs/model-capability-gating-design.md`, `docs/superpowers/plans/2026-09-07-ws-a-anchored-ingestion.md`
+**Related docs:** `docs/cache-design.md`, `docs/variant-corpus-ingestion-design.md`, `docs/model-capability-gating-design.md`, `docs/2026-09-07-ws-a-anchored-ingestion-plan.md`
 **Implementation:** Per-workstream plans, sequenced below; each plan implements one subsystem from this spec.
 
 ---
