@@ -38,9 +38,25 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
         run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py -v
 
+      # CI runners start from a fresh checkout where data/ (vector store, graph
+      # store) is gitignored and therefore absent. Without an ingested corpus the
+      # eval agent searches an empty store, every document-grounded question fails
+      # its has_doc_source check, and the report shows 0% pass — even with a valid
+      # OPENROUTER_API_KEY (the pre-fix symptom was a 401 on every LLM call because
+      # the secret was unset and the mock fallback key was used). Build the main
+      # corpus here so the benchmark actually exercises retrieval.
+      # EMBEDDING_STRATEGY=sequential avoids the OpenRouter beta batches endpoint
+      # (submit + poll) and keeps this step deterministic.
+      - name: Build retrieval corpus for evaluation
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          EMBEDDING_STRATEGY: sequential
+        run: uv run python -m nga.ingestion.build_vector_store --profile main
+
       - name: Execute Evaluation Benchmark Suite
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          EMBEDDING_STRATEGY: sequential
         run: |
           # Run benchmark smoke evaluation across categories
           uv run python -c "
@@ -70,6 +86,7 @@ jobs:
             --report-file "$LATEST_REPORT" \
             --generate-svg "reports/eval/trends.svg" \
             --github-summary \
+            --fail-on-regression \
             --threshold 0.70
 
       - name: Upload Evaluation Reports & Trend Artifacts
