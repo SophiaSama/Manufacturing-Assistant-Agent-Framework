@@ -16,6 +16,29 @@ os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 
 _VALID_ENVIRONMENTS = {"local": "Local", "cloud": "Cloud"}
 
+_VALID_CORPUS_PROFILES = {"main", "variant", "conflict"}
+
+
+_VALID_EMBEDDING_STRATEGIES = {"batch", "sequential"}
+
+
+def _parse_corpus_profile() -> str:
+    raw = (os.getenv("CORPUS_PROFILE", "main") or "main").strip().lower()
+    if raw not in _VALID_CORPUS_PROFILES:
+        raise ValueError(
+            f"CORPUS_PROFILE must be one of {sorted(_VALID_CORPUS_PROFILES)}, got: {raw!r}"
+        )
+    return raw
+
+
+def _parse_embedding_strategy() -> str:
+    raw = (os.getenv("EMBEDDING_STRATEGY", "batch") or "").strip().lower()
+    if raw not in _VALID_EMBEDDING_STRATEGIES:
+        raise ValueError(
+            f"EMBEDDING_STRATEGY must be 'batch' or 'sequential', got: {raw!r}"
+        )
+    return raw
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -33,6 +56,12 @@ class Settings:
     vector_store_dir: str
     documents_dir: str
     graph_store_dir: str
+    graph_max_docs: int
+    # Corpus profile (main | variant | conflict) — docs/variant-corpus-ingestion-design.md
+    corpus_profile: str
+    variant_corpus_dir: str
+    variant_vector_store_dir: str
+    conflict_vector_store_dir: str
     langsmith_tracing_enabled: bool
     # RBAC JWT
     jwt_secret: str
@@ -47,6 +76,19 @@ class Settings:
     rag_tier1_max_hops: int
     rag_tier2_max_hops: int
     rag_tier3_max_hops: int
+    # Batch embedding tuning
+    embedding_poll_interval: float
+    embedding_max_wait: float
+    embedding_strategy: str  # "batch" | "sequential"
+    # Cache (docs/cache-design.md)
+    cache_enabled: bool
+    cache_mode: str  # "cold" | "hot" (eval); prod always serves hot when enabled
+    cache_db_path: str
+    cache_eval_db_path: str
+    cache_ttl_emb_s: float
+    cache_ttl_retr_s: float
+    cache_ttl_sql_s: float
+    cache_max_entries: int
 
     @property
     def provider(self) -> str:
@@ -71,7 +113,8 @@ class Settings:
             if not openrouter_api_key or openrouter_api_key.lower().startswith("your-"):
                 raise ValueError(
                     "OPENROUTER_API_KEY is missing or still a placeholder. "
-                    "Set a real key in .env for Cloud mode."
+                    "Set a real key via the OPENROUTER_API_KEY environment "
+                    "variable (e.g., in .env or as a CI secret) for Cloud mode."
                 )
         else:
             missing = [
@@ -109,6 +152,15 @@ class Settings:
             vector_store_dir=os.getenv("VECTOR_STORE_DIR", "data/vector_store"),
             documents_dir=os.getenv("DOCUMENTS_DIR", ""),  # auto-discovered if empty
             graph_store_dir=os.getenv("GRAPH_STORE_DIR", "data/graph_store"),
+            graph_max_docs=int(os.getenv("GRAPH_MAX_DOCS", "0")),
+            corpus_profile=_parse_corpus_profile(),
+            variant_corpus_dir=os.getenv("VARIANT_CORPUS_DIR", "variant-corpus"),
+            variant_vector_store_dir=os.getenv(
+                "VARIANT_VECTOR_STORE_DIR", "data/variant_vector_store"
+            ),
+            conflict_vector_store_dir=os.getenv(
+                "CONFLICT_VECTOR_STORE_DIR", "data/conflict_vector_store"
+            ),
             langsmith_tracing_enabled=tracing_enabled,
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret"),
             jwt_dev_mode=os.getenv("JWT_DEV_MODE", "true").lower() == "true",
@@ -133,4 +185,22 @@ class Settings:
             rag_tier1_max_hops=int(os.getenv("RAG_TIER1_MAX_HOPS", "1")),
             rag_tier2_max_hops=int(os.getenv("RAG_TIER2_MAX_HOPS", "3")),
             rag_tier3_max_hops=int(os.getenv("RAG_TIER3_MAX_HOPS", "8")),
+            embedding_poll_interval=float(
+                os.getenv("EMBEDDING_POLL_INTERVAL", "10")
+            ),
+            embedding_max_wait=float(
+                os.getenv("EMBEDDING_MAX_WAIT", "1800")
+            ),
+            embedding_strategy=_parse_embedding_strategy(),
+            cache_enabled=os.getenv("CACHE_ENABLED", "false").lower()
+            in ("1", "true", "yes"),
+            cache_mode=(os.getenv("CACHE_MODE", "cold") or "cold").strip().lower(),
+            cache_db_path=os.getenv("CACHE_DB_PATH", "data/cache/nga_cache.db"),
+            cache_eval_db_path=os.getenv(
+                "CACHE_EVAL_DB_PATH", "data/cache/eval_cache.db"
+            ),
+            cache_ttl_emb_s=float(os.getenv("CACHE_TTL_EMB_S", "86400")),
+            cache_ttl_retr_s=float(os.getenv("CACHE_TTL_RETR_S", "3600")),
+            cache_ttl_sql_s=float(os.getenv("CACHE_TTL_SQL_S", "300")),
+            cache_max_entries=int(os.getenv("CACHE_MAX_ENTRIES", "100000")),
         )

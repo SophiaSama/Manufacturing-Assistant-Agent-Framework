@@ -60,6 +60,7 @@ def _search_one_category(
             "text": doc.page_content,
             "access_level": doc.metadata.get("access_level", "operator"),
             "level_rank": doc.metadata.get("level_rank", 1),
+            "corpus_source": doc.metadata.get("corpus_source", "canonical"),
         }
         for doc in docs
     ]
@@ -71,25 +72,66 @@ def retrieve_documents(
     category: str | list[str] | None,
     k: int = 5,
     user_level: int = 1,
+    cache: Any | None = None,
 ) -> list[dict[str, Any]]:
-    """Run parallel RBAC-filtered similarity search across categories."""
+    """Run parallel RBAC-filtered similarity search across categories.
+
+    When `cache` is provided (or an active cache_scope is set), results are
+    cached per (query, categories, k, user_level) with corpus-version and
+    RBAC scoping (docs/cache-design.md §3.2/§4).
+    """
     categories = normalize_categories(category)
-    results: list[dict[str, Any]] = []
-    with ThreadPoolExecutor(max_workers=min(len(categories), 4)) as executor:
-        futures = {
-            executor.submit(
-                _search_one_category, store, query, cat, k, user_level
-            ): cat
-            for cat in categories
-        }
-        for future, cat in futures.items():
-            try:
-                results.extend(future.result())
-            except Exception:
-                logger.exception(
-                    "Retrieval failed for query=%r category=%r", query, cat
+
+    def _run() -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        errors: list[Exception] = []
+        with ThreadPoolExecutor(max_workers=min(len(categories), 4)) as executor:
+            futures = {
+                executor.submit(
+                    _search_one_category, store, query, cat, k, user_level
+                ): cat
+                for cat in categories
+            }
+            for future, cat in futures.items():
+                try:
+                    results.extend(future.result())
+                except Exception as exc:
+                    errors.append(exc)
+                    logger.debug(
+                        "Retrieval failed for query=%r category=%r: %s",
+                        query, cat, exc,
+                    )
+        if errors and len(errors) >= len(categories):
+            # All categories failed — surface the likely cause loudly instead
+            # of silently returning empty context (agent would answer blind).
+            from nga.ingestion.build_vector_store import _is_dimension_mismatch
+
+            dim_errors = [e for e in errors if _is_dimension_mismatch(e)]
+            if dim_errors:
+                logger.error(
+                    "ALL retrieval categories failed: embedding dimension "
+                    "mismatch for query=%r. The vector store was built with a "
+                    "different embedding model than the runtime EMBEDDING_MODEL "
+                    "— rebuild the store with the matching model.",
+                    query,
                 )
-    return results
+            else:
+                logger.error(
+                    "ALL retrieval categories failed for query=%r: %s",
+                    query, errors[0],
+                )
+        return results
+
+    from nga.cache.layers import cached_retrieve
+
+    return cached_retrieve(
+        _run,
+        query=query,
+        categories=categories,
+        k=k,
+        user_level=user_level,
+        cache=cache,
+    )
 
 
 def retrieve_graph_evidence(
@@ -100,17 +142,30 @@ def retrieve_graph_evidence(
     k_entities: int = 5,
     max_hops: int = 2,
     user_level: int = 1,
+    cache: Any | None = None,
 ) -> dict[str, Any]:
-    """Run RBAC-filtered GraphRAG local search."""
-    try:
-        from nga.graphrag.search import build_graph_evidence
-        return build_graph_evidence(
-            graph, query, embeddings,
-            k_entities=k_entities, max_hops=max_hops, user_level=user_level,
-        )
-    except Exception:
-        logger.exception("Graph retrieval failed for query=%r", query)
-        return {"entities": [], "relations": [], "community_summaries": []}
+    """Run RBAC-filtered GraphRAG local search (cached per query params)."""
+    def _run() -> dict[str, Any]:
+        try:
+            from nga.graphrag.search import build_graph_evidence
+            return build_graph_evidence(
+                graph, query, embeddings,
+                k_entities=k_entities, max_hops=max_hops, user_level=user_level,
+            )
+        except Exception:
+            logger.exception("Graph retrieval failed for query=%r", query)
+            return {"entities": [], "relations": [], "community_summaries": []}
+
+    from nga.cache.layers import cached_graph_evidence
+
+    return cached_graph_evidence(
+        _run,
+        query=query,
+        k_entities=k_entities,
+        max_hops=max_hops,
+        user_level=user_level,
+        cache=cache,
+    )
 
 
 def build_retrieval_payload(
@@ -127,6 +182,7 @@ def build_retrieval_payload(
             "section": r.get("section"),
             "chunk_id": r.get("chunk_id"),
             "category": r.get("category"),
+            "corpus_source": r.get("corpus_source", "canonical"),
         }
         for r in results
     ]
@@ -154,10 +210,13 @@ def format_retrieval_results(
             doc_id = r.get("doc_id", "")
             section = r.get("section", "")
             cat = r.get("category", "")
+            source = r.get("corpus_source", "canonical")
             prefix = f"[{cat}]" if cat else ""
             ref = f"[{doc_id}]" if doc_id else ""
             sec = f" §{section}" if section else ""
-            lines.append(f"{prefix}{ref}{sec} {r['text']}")
+            src_tag = "[VARIANT]" if source == "variant" else ""
+            src = f" {src_tag}" if src_tag else ""
+            lines.append(f"{prefix}{src}{ref}{sec} {r['text']}")
         block = "\n\n".join(lines)
 
     if graph_evidence:

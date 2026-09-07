@@ -321,7 +321,7 @@ def _make_synthesis_node(settings: Settings):
 
 # ── Node: hitl ───────────────────────────────────────────────────────────────
 
-def _make_hitl_node(app_state_db_path: str):
+def _make_hitl_node(app_state_db_path: str, approver=None):
     def _hitl_node(state: AgentState) -> dict[str, Any]:
         recommendation = state.get("pending_recommendation")
         if not recommendation:
@@ -347,11 +347,21 @@ def _make_hitl_node(app_state_db_path: str):
             class_a_alert=class_a_alert,
             escalation_level=escalation_level,
         )
-        status, note = request_approval(
-            recommendation,
-            class_a_alert=class_a_alert,
-            escalation_level=escalation_level,
-        )
+
+        if approver is not None:
+            # Pluggable approver (server/auto/eval). Interactive input() is
+            # unsafe in non-TTY contexts — EOFError crashes the graph.
+            status, note = approver(
+                recommendation,
+                class_a_alert=class_a_alert,
+                escalation_level=escalation_level,
+            )
+        else:
+            status, note = request_approval(
+                recommendation,
+                class_a_alert=class_a_alert,
+                escalation_level=escalation_level,
+            )
         update_decision(app_state_db_path, decision_id, status=status, approver=note)
         return {"pending_recommendation": recommendation}
 
@@ -360,8 +370,15 @@ def _make_hitl_node(app_state_db_path: str):
 
 # ── Graph assembly ────────────────────────────────────────────────────────────
 
-def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_tool):
-    """Build and compile the NGA LangGraph orchestrator."""
+def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_tool,
+                       approver=None):
+    """Build and compile the NGA LangGraph orchestrator.
+
+    `approver`: optional callable(recommendation, *, class_a_alert,
+    escalation_level) -> (status, note). Defaults to the interactive CLI
+    approver (nga.hitl.approval.request_approval). Server/eval callers MUST
+    pass a non-interactive approver (input() crashes outside a TTY).
+    """
     wrapped_sql = _wrap_tool_with_logging(sql_tool)
     wrapped_retrieval = _wrap_tool_with_logging(retrieval_tool)
 
@@ -379,7 +396,7 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
     )
     graph.add_node("tools", ToolNode([wrapped_sql, wrapped_retrieval]))
     graph.add_node("synthesis", _make_synthesis_node(settings))
-    graph.add_node("hitl", _make_hitl_node(settings.app_state_db_path))
+    graph.add_node("hitl", _make_hitl_node(settings.app_state_db_path, approver=approver))
 
     graph.set_entry_point("prepare")
     graph.add_edge("prepare", "agent")

@@ -5,19 +5,23 @@ from __future__ import annotations
 import argparse
 import logging
 import uuid
-from pathlib import Path
 
 from langchain_core.messages import HumanMessage
-from langchain_chroma import Chroma
 
+from nga.cache import CachedEmbeddings, make_cache_from_settings
 from nga.config import Settings
 from nga.graph.orchestrator import build_orchestrator
 from nga.ingestion.build_graph import load_graph
+from nga.ingestion.build_vector_store import open_vector_store
 from nga.memory.checkpointer import build_checkpointer
 from nga.memory.decision_log import init_decision_log
-from nga.models.answer_schema import FinalAnswer, parse_final_answer, render_final_answer
+from nga.models.answer_schema import (
+    FinalAnswer,
+    parse_final_answer,
+    render_final_answer,
+)
 from nga.providers.factory import make_embeddings
-from nga.rag_agent.rbac import ACCESS_LEVELS, SYSTEM_PROMPTS
+from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
 
 logger = logging.getLogger("nga.cli")
@@ -119,20 +123,23 @@ def main(argv: list[str] | None = None) -> None:
     settings = Settings.from_env()
     init_decision_log(settings.app_state_db_path)
 
+    cache = make_cache_from_settings(settings, env="prod")
+    if cache is not None:
+        logger.info("cache enabled env=prod db=%s", settings.cache_db_path)
+
     embeddings = make_embeddings(settings)
-    store = Chroma(
-        collection_name="nga_reference_docs",
-        embedding_function=embeddings,
-        persist_directory=settings.vector_store_dir,
-    )
+    if cache is not None:
+        embeddings = CachedEmbeddings(embeddings, cache=cache, model_id=settings.embedding_model)
+    store = open_vector_store(settings, embeddings=embeddings)
 
     graph_data = load_graph(settings.graph_store_dir)
     role = args.role
     user_level = ACCESS_LEVELS.get(role, 1)
 
-    sql_tool = make_sql_tool(settings.nga_db_path)
+    sql_tool = make_sql_tool(settings.nga_db_path, cache=cache)
     retrieval_tool = make_retrieval_tool(
-        store, graph=graph_data, embeddings=embeddings, user_level=user_level
+        store, graph=graph_data, embeddings=embeddings, user_level=user_level,
+        cache=cache,
     )
     checkpointer = build_checkpointer(settings.app_state_db_path)
     agent_graph = build_orchestrator(settings, checkpointer, sql_tool, retrieval_tool)
@@ -160,7 +167,8 @@ def main(argv: list[str] | None = None) -> None:
                 role = new_role
                 user_level = ACCESS_LEVELS[role]
                 retrieval_tool = make_retrieval_tool(
-                    store, graph=graph_data, embeddings=embeddings, user_level=user_level
+                    store, graph=graph_data, embeddings=embeddings,
+                    user_level=user_level, cache=cache,
                 )
                 agent_graph = build_orchestrator(
                     settings, checkpointer, sql_tool, retrieval_tool

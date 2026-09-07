@@ -20,9 +20,11 @@ Usage:
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 import pytest
+
+# Conflict detection requires cross-document contradiction reasoning → 'strong'
+pytestmark = [pytest.mark.required_tier("strong")]
 
 # ── Conflict scenarios ────────────────────────────────────────────────────────
 
@@ -117,11 +119,21 @@ def _answer_contains_both_values(answer: str, conflict_values: list[str]) -> boo
     CONFLICT_SCENARIOS,
     ids=[s["id"] for s in CONFLICT_SCENARIOS],
 )
-def test_conflict_detection(scenario, agent_graph):
-    """Test that the agent either detects conflicts or returns the canonical answer."""
+def test_conflict_detection(scenario, conflict_agent_graph):
+    """Test that the agent either detects conflicts or returns the canonical answer.
+
+    Uses the conflict corpus profile (canonical + differing variant files) so
+    retrieval actually surfaces both conflicting values.
+    """
+    agent_graph = conflict_agent_graph
     from langchain_core.messages import HumanMessage
+
+    from nga.models.answer_schema import (
+        FinalAnswer,
+        parse_final_answer,
+        render_final_answer,
+    )
     from nga.rag_agent.rbac import ACCESS_LEVELS
-    from nga.models.answer_schema import FinalAnswer, parse_final_answer, render_final_answer
 
     question = scenario["question"]
     thread_id = str(uuid.uuid4())

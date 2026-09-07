@@ -101,10 +101,16 @@ def build_graph_from_documents(
     graph = nx.Graph()
     entity_registry: dict[str, dict] = {}
 
+    total = min(len(documents), max_docs)
+    logger.info("Building graph from %d/%d chunks (max_docs=%d)", total, len(documents), max_docs)
+
     for i, doc in enumerate(documents[:max_docs]):
         level_rank = doc.metadata.get("level_rank", 1)
+        source = doc.metadata.get("source", "?")
+        logger.info("[%d/%d] Extracting from: %s", i + 1, total, source)
         payload = extract_entities_and_relations(doc.page_content, llm, level_rank)
 
+        n_entities = 0
         for entity in payload.get("entities", []):
             eid = entity.get("id", "").lower().strip()
             if not eid:
@@ -121,7 +127,9 @@ def build_graph_from_documents(
                 graph.nodes[eid]["level_rank"] = max(
                     existing.get("level_rank", 1), entity.get("level_rank", 1)
                 )
+            n_entities += 1
 
+        n_relations = 0
         for rel in payload.get("relations", []):
             src = rel.get("source", "").lower()
             tgt = rel.get("target", "").lower()
@@ -130,9 +138,12 @@ def build_graph_from_documents(
                 graph.add_edge(src, tgt, relation=rtype,
                                description=rel.get("description", ""),
                                level_rank=rel.get("level_rank", 1))
+                n_relations += 1
 
-        if (i + 1) % 10 == 0:
-            logger.info("Processed %d/%d documents for graph extraction", i+1, len(documents))
+        logger.info(
+            "  → %d entities, %d relations (graph total: %d nodes, %d edges)",
+            n_entities, n_relations, graph.number_of_nodes(), graph.number_of_edges(),
+        )
 
     logger.info(
         "Graph built: %d nodes, %d edges", graph.number_of_nodes(), graph.number_of_edges()
@@ -184,23 +195,54 @@ def load_graph(graph_store_dir: str) -> Any | None:
 
 
 def main() -> None:
+    import argparse
     import sys
     logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-    from nga.config import Settings
-    from nga.providers.factory import make_chat_model
-    from nga.ingestion.build_vector_store import discover_documents
     from langchain_chroma import Chroma
-    from nga.providers.factory import make_embeddings
+
+    from nga.config import Settings
+    from nga.ingestion.build_vector_store import (
+        CORPUS_PROFILES,
+        profile_collection_name,
+        profile_store_dir,
+    )
+    from nga.providers.factory import make_chat_model, make_embeddings
+
+    parser = argparse.ArgumentParser(description="Build GraphRAG knowledge graph")
+    parser.add_argument(
+        "--max-docs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Max number of chunks to process (0 or omit = all). "
+             "Overrides GRAPH_MAX_DOCS env var.",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=CORPUS_PROFILES,
+        default=None,
+        help="Corpus profile (default: from CORPUS_PROFILE env, 'main')",
+    )
+    args = parser.parse_args()
 
     settings = Settings.from_env()
-    base_dir = Path(settings.nga_db_path).parent.parent
+    profile = args.profile or settings.corpus_profile
 
-    # Load vector store documents for graph extraction
+    # Resolve max_docs: CLI flag > env var (GRAPH_MAX_DOCS) > all docs
+    if args.max_docs is not None:
+        max_docs = args.max_docs if args.max_docs > 0 else None
+    elif settings.graph_max_docs > 0:
+        max_docs = settings.graph_max_docs
+    else:
+        max_docs = None  # process all
+
+    # Load vector store documents for graph extraction (profile-aware)
     embeddings = make_embeddings(settings)
+
     store = Chroma(
-        collection_name="nga_reference_docs",
+        collection_name=profile_collection_name(profile),
         embedding_function=embeddings,
-        persist_directory=settings.vector_store_dir,
+        persist_directory=profile_store_dir(settings, profile),
     )
     all_docs = store.get(include=["documents", "metadatas"])
     from langchain_core.documents import Document
@@ -211,7 +253,7 @@ def main() -> None:
     logger.info("Extracting entities from %d chunks...", len(docs))
 
     llm = make_chat_model(settings)
-    graph = build_graph_from_documents(docs, llm)
+    graph = build_graph_from_documents(docs, llm, max_docs=max_docs or len(docs))
     save_graph(graph, settings.graph_store_dir)
     logger.info("GraphRAG build complete.")
 

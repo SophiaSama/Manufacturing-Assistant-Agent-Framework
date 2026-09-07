@@ -1,0 +1,83 @@
+name: CI & Evaluation Tracking
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  test-and-eval:
+    name: Test, Evaluation & Trend Tracking
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run code formatting and linting
+        run: uv run ruff check .
+
+      - name: Run unit, API & stress test suites
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+        run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py -v
+
+      - name: Execute Evaluation Benchmark Suite
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+        run: |
+          # Run benchmark smoke evaluation across categories
+          uv run python -c "
+          from nga.evaluation.eval_runner import run_evaluation_suite, load_eval_questions
+          from nga.graph.orchestrator import build_orchestrator
+          from nga.ui.server import ctx
+          import os
+
+          # Run smoke suite across all 6 categories (including stress)
+          questions = load_eval_questions(smoke_test=True)
+          ctx.setup()
+          graph = ctx.get_graph('manager')
+          summary, results, md_path, json_path = run_evaluation_suite(
+              agent_graph=graph,
+              questions=questions,
+              run_label='ci_' + os.getenv('GITHUB_SHA', 'local')[:7],
+          )
+          print(f'Evaluation finished: Pass Rate={summary[\"pass_rate\"]*100:.1f}%, Report={json_path}')
+          "
+
+      - name: Track Evaluation & Generate Visualizations
+        run: |
+          # Record evaluation into historical ledger, generate SVG charts and GitHub step summary
+          LATEST_REPORT=$(ls -t reports/eval/*.json | head -n 1)
+          echo "Processing latest report: $LATEST_REPORT"
+          uv run python -m nga.evaluation.ci_tracker \
+            --report-file "$LATEST_REPORT" \
+            --generate-svg "reports/eval/trends.svg" \
+            --github-summary \
+            --threshold 0.70
+
+      - name: Upload Evaluation Reports & Trend Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nga-evaluation-history
+          path: |
+            reports/eval/*.json
+            reports/eval/*.md
+            reports/eval/*.svg
+          retention-days: 30

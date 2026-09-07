@@ -21,6 +21,7 @@ class ScoreResult:
     tools_called: list[str] = field(default_factory=list)
     latency_s: float = 0.0
     error: str | None = None
+    cache_stats: dict | None = None  # per-layer hit/miss/ms when cache hot
 
 
 def _parsed_tool_payloads(tool_outputs: list[str] | None) -> list[dict]:
@@ -113,6 +114,7 @@ def score_answer(
     judge: Callable[[str, str], int] | None = None,
     latency_s: float = 0.0,
     error: str | None = None,
+    cache_stats: dict | None = None,
 ) -> ScoreResult:
     checks = deterministic_checks(
         answer, expected_tools, tools_called, source_docs,
@@ -142,4 +144,5 @@ def score_answer(
         tools_called=tools_called,
         latency_s=latency_s,
         error=error,
+        cache_stats=cache_stats,
     )
