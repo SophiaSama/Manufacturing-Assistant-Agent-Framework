@@ -113,7 +113,8 @@ class Settings:
             if not openrouter_api_key or openrouter_api_key.lower().startswith("your-"):
                 raise ValueError(
                     "OPENROUTER_API_KEY is missing or still a placeholder. "
-                    "Set a real key in .env for Cloud mode."
+                    "Set a real key via the OPENROUTER_API_KEY environment "
+                    "variable (e.g., in .env or as a CI secret) for Cloud mode."
                 )
         else:
             missing = [

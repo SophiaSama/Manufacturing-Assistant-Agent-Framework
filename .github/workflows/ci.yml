@@ -11,6 +11,7 @@ jobs:
   test-and-eval:
     name: Test, Evaluation & Trend Tracking
     runs-on: ubuntu-latest
+    environment: staging
 
     steps:
       - name: Checkout repository
@@ -33,11 +34,13 @@ jobs:
         run: uv run ruff check .
 
       - name: Run unit, API & stress test suites
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
         run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py -v
 
       - name: Execute Evaluation Benchmark Suite
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
         run: |
           # Run benchmark smoke evaluation across categories
           uv run python -c "
