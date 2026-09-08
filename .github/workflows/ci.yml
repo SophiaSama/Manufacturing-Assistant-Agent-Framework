@@ -13,6 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
 
+    # Budget-friendly eval stack: a single fast, cheap, credit-affordable chat
+    # model for all tiers. OpenRouter's :free tier proved unusable (throttled /
+    # capacity-exhausted) and the default Claude slugs 402 on a low-credit key
+    # because worst-case 64k output exceeds the balance. gemini-2.5-flash-lite
+    # costs ~$0.20/M out, supports function calling, and passes the affordability
+    # gate (~$0.026 worst case vs the key's balance).
+    env:
+      OPENROUTER_MODEL: google/gemini-2.5-flash-lite
+      RAG_TIER1_MODEL: google/gemini-2.5-flash-lite
+      RAG_TIER2_MODEL: google/gemini-2.5-flash-lite
+      RAG_TIER3_MODEL: google/gemini-2.5-flash-lite
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
