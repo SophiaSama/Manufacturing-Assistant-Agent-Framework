@@ -15,6 +15,8 @@ def _now_ts() -> str:
 
 
 def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
+    from nga.evaluation.stepped_suite import compute_stepped_summary
+
     total = len(results)
     passed = sum(1 for r in results if r.passed)
     by_category: dict[str, dict] = {}
@@ -43,6 +45,8 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
 
     all_scores = [r.overall_score for r in results]
     all_lats = [r.latency_s for r in results]
+    stepped_sum = compute_stepped_summary(results)
+
     return {
         "total": total,
         "passed": passed,
@@ -50,6 +54,8 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
         "avg_score": round(sum(all_scores) / max(len(all_scores), 1), 3),
         "avg_latency_s": round(sum(all_lats) / max(len(all_lats), 1), 2),
         "by_category": cat_summary,
+        "by_tier": stepped_sum.get("tiers", []),
+        "stepped_summary": stepped_sum,
     }
 
 
@@ -76,6 +82,17 @@ def generate_markdown_report(
     lines.append(f"| Avg Score | {summary['avg_score']:.3f} |")
     lines.append(f"| Avg Latency | {summary['avg_latency_s']:.2f}s |")
 
+    lines.append("\n## Results by Stepped Tier (L1–L4)\n")
+    lines.append("| Tier | Total | Passed | Pass Rate | Avg Score | Avg Latency | Meets Target |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for t in summary.get("by_tier", []):
+        status = "✅" if t.get("meets_target") else "⚠️"
+        lines.append(
+            f"| {t['tier']} | {t['total']} | {t['passed']} "
+            f"| {t['pass_rate']*100:.1f}% | {t['avg_score']:.3f} "
+            f"| {t['avg_latency_s']:.2f}s | {status} |"
+        )
+
     lines.append("\n## Results by Category\n")
     lines.append("| Category | Total | Passed | Pass Rate | Avg Score | Avg Latency |")
     lines.append("|---|---|---|---|---|---|")
@@ -87,14 +104,14 @@ def generate_markdown_report(
         )
 
     lines.append("\n## Detailed Results\n")
-    lines.append("| ID | Category | Score | Passed | Latency | Tools | Error |")
+    lines.append("| ID | Tier | Category | Score | Passed | Latency | Tools | Error |")
     lines.append("|---|---|---|---|---|---|---|")
     for r in sorted(results, key=lambda x: x.question_id):
         status = "✅" if r.passed else "❌"
         tools = ", ".join(r.tools_called) if r.tools_called else "—"
-        err = (r.error or "")[:60]
+        tier_val = getattr(r, "tier", "L2")
         lines.append(
-            f"| {r.question_id} | {r.category} | {r.overall_score:.3f} "
+            f"| {r.question_id} | {tier_val} | {r.category} | {r.overall_score:.3f} "
             f"| {status} | {r.latency_s:.2f}s | {tools} | {err} |"
         )
 
@@ -103,7 +120,8 @@ def generate_markdown_report(
     if failed:
         lines.append(f"\n## Failed Cases ({len(failed)})\n")
         for r in failed:
-            lines.append(f"### {r.question_id} ({r.category})")
+            tier_val = getattr(r, "tier", "L2")
+            lines.append(f"### {r.question_id} [{tier_val}] ({r.category})")
             lines.append(f"- Score: {r.overall_score:.3f}")
             lines.append(f"- Checks: {json.dumps(r.checks)}")
             if r.error:
@@ -137,10 +155,12 @@ def save_report(
         "run_label": label,
         "cache_mode": cache_mode,
         "summary": summary,
+        "stepped_summary": summary.get("stepped_summary"),
         "cache": cache_summary,
         "results": [
             {
                 "id": r.question_id,
+                "tier": getattr(r, "tier", "L2"),
                 "category": r.category,
                 "overall_score": r.overall_score,
                 "passed": r.passed,

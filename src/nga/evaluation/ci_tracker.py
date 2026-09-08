@@ -198,6 +198,8 @@ def record_eval_run(
             "avg_score": avg_score,
             "avg_latency_s": avg_latency,
             "by_category": summary.get("by_category", []),
+            "by_tier": summary.get("by_tier", []),
+            "stepped_summary": report_data.get("stepped_summary") or summary.get("stepped_summary"),
         },
         "delta_from_previous": delta,
     }

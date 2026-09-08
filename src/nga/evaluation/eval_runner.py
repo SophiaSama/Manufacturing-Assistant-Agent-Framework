@@ -110,6 +110,7 @@ def run_single_eval_question(
 
     q_id = question_data.get("id", "UNKNOWN")
     category = question_data.get("category", "general")
+    tier = question_data.get("tier", "L2")
     question_text = question_data.get("question", "")
     expected_answer = question_data.get("expected_answer", "")
     source_docs = question_data.get("source_docs", [])
@@ -199,6 +200,7 @@ def run_single_eval_question(
         latency_s=latency_s,
         error=error_msg,
         cache_stats=cache_stats,
+        tier=tier,
     )
 
 

@@ -129,10 +129,52 @@ The NGA Web Interface (`src/nga/ui/`) is a full-featured dashboard designed for 
 | **💬 Assistant Chat & Final Answer** | Interactive decision support with structured responses: 🚨 **Class A Defect hazard banners**, ⚡ **ESC-402 escalation tags**, 🏷️ **QCR-501 recall criteria**, 📋 **Key findings**, and 🔍 **Verified citations** linking to SOP document IDs and SQL tables. |
 | **🛡️ HIL Safety Gate & Queue** | Review pending high-consequence actions (`stop-ship`, `quarantine`, `halt line`). Enforces mandatory approver ID and engineering justification notes for Class A safety items before persisting to `app_state.db`. |
 | **📜 System & Execution Logs** | Real-time LangGraph step trace feed, exact SQL queries executed against `nga.db` with row counts, ChromaDB retrieval scores, and a central filterable log console (`INFO`, `WARNING`, `ERROR`). |
+| **🕸️ Graph Quality Metrics** | **Dashboard 1**: Quantitative ingestion-time monitoring for Knowledge Graphs: Entity Extraction F1, Relation Accuracy, Entity Alignment Success Rate, and Knowledge Coverage Rate against gold ground-truth facts. |
+| **🪜 Stepped Evaluation Suite** | **Dashboard 2**: Cognitive difficulty breakdown across 4 tiers: L1 (Single-Hop Fact) → L2 (Two-Hop Relation) → L3 (Three-Hop Cross-Doc) → L4 (Multi-Domain Challenge) with reasoning degradation slope and failure isolation. |
 | **📊 Evaluation Benchmark Runner** | Run evaluations across all 85 benchmark questions or targeted subsets (`retrieval`, `multi-hop`, `scenario`, `escalation-recall`, `sql`, `stress`, or quick 5-question smoke tests) with live progress tracking. |
-| **⚖️ Evaluation Comparison Studio** | Select any two runs (Baseline vs Candidate) to analyze **Pass Rate Deltas ($\Delta\%$)**, **Average Score Deltas**, **Latency Deltas**, category breakdowns, and a **Question Transition Matrix** classifying Regressions (🔻), Improvements (🔺), and Maintained Passes (✅). |
+| **⚖️ A/B Testing & Release Gates** | **Dashboard 3**: Benchmark candidate strategies against pure vector baselines, track Graph Uplift ($\Delta\%$), and validate **6 Hard Release Criteria** (Pass Rate $\ge 85\%$, L3/L4 Uplift $\ge +10\%$, zero regressions, 100% Class A recall, $\le 12\text{s}$ latency ceiling, SQL injection safe). |
+| **🤖 Multi-Model Arena** | **Dashboard 4**: Multi-provider side-by-side benchmark comparing Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Flash/Pro, DeepSeek V3/R1, and Grok-2 for reasoning accuracy, latency, token costs, and **Pareto Efficiency Frontier**. |
 | **📈 CI Trends & Historical Tracking** | Visualize evaluation trajectories across Git commits and CI builds: **Pass rate trends line chart (SVG)** with $\ge 70\%$ threshold target, category health breakdowns, and chronological commit ledger. |
 | **👤 RBAC Clearance Matrix** | View clearance levels (1 to 4), permitted document folder paths, and operational role boundaries. |
+
+---
+
+## 📊 The Four Enterprise Evaluation Dashboards
+
+The framework implements four production-grade evaluation dashboards to eliminate guesswork and subjective evaluation:
+
+### 1. 🕸️ Dashboard 1: The Four Quantitative Graph Quality Metrics
+Monitors graph extraction quality at ingestion time against the curated `eval-graph/gold_graph_benchmark.json` standard:
+* **Entity Extraction Accuracy (F1)**: Quantifies precision, recall, and F1 of extracted manufacturing entities (`Machine`, `Station`, `Threshold`, `FaultCode`, `RecallCriteria`). Target: $\ge 90\%$.
+* **Relation Extraction Accuracy**: Audits directed edges against the plant manufacturing ontology rules to block hallucinated connections. Target: $\ge 85\%$.
+* **Entity Alignment Success Rate**: Verifies whether synonyms and alternative tool codes (e.g. `TF-6000` $\equiv$ `TQ-6018`, `AU-2025` $\equiv$ `Aurora`) correctly converge to the same global node ID. Target: $\ge 95\%$.
+* **Knowledge Coverage Rate**: Audits whether core numerical facts, cure times, and torque specs in raw SOPs exist and are reachable in the graph. Target: $\ge 90\%$.
+
+### 2. 🪜 Dashboard 2: The 4-Tier Stepped Evaluation Test Suite (阶梯式评测集)
+Stratifies the 85 evaluation questions into 4 difficulty levels to isolate exact reasoning bottlenecks:
+* **Level 1 — Single-Hop Fact Questions (单跳事实题)**: Tests baseline dense vector retrieval (Target: $\ge 95\%$, $< 2.5\text{s}$).
+* **Level 2 — Two-Hop Explicit Relation Questions (两跳显式关系题)**: Tests direct graph connectivity and 1-step edge traversal (Target: $\ge 90\%$, $< 4.5\text{s}$).
+* **Level 3 — Three-Hop Cross-Document Complex Reasoning (三跳跨文档复杂推理题)**: Tests dual-path hybrid retrieval (Vector + Subgraph BFS) across $\ge 2$ documents (Target: $\ge 82\%$, $< 8.0\text{s}$).
+* **Level 4 — Multi-Domain Comprehensive Challenge Questions (跨多条业务线的综合难题)**: Tests long-chain reasoning combining Text-to-SQL + SOP document search + Class A safety recall + RBAC boundaries + adversarial anti-hallucination probes (Target: $\ge 75\%$, $< 15.0\text{s}$).
+* **Degradation Slope**: Tracks performance decay across hops: $\text{Slope} = \frac{\text{PassRate}(L1) - \text{PassRate}(L4)}{3}$ (Target: $\le 0.08$/tier).
+
+### 3. ⚖️ Dashboard 3: A/B Testing & Hard Release Criteria Safeguards
+Ensures code, embedding, or prompt modifications are only promoted to production when deterministic gains are proven:
+* **Benchmark against Pure Vector Baseline**: Candidate runs undergo A/B testing against a control group with graph retrieval disabled (`graph=None`).
+* **The 6 Hard Release Criteria**:
+  1. Overall pass rate $\ge 85.0\%$.
+  2. Graph uplift on L3/L4 complex tiers $\ge +10.0\%$ over pure vector baseline.
+  3. Zero regressions allowed (no previously passing question may fail).
+  4. 100% accuracy on Class A defect detection and QCR-501 recall triggers.
+  5. Average response latency $\le 12.0\text{s}$.
+  6. 100% protection against adversarial SQL injection attacks (`STR4`).
+* **Instant Rollback**: Automatically flags rollback when candidate runs violate release criteria.
+
+### 4. 🤖 Dashboard 4: Multi-Model A/B Evaluation Arena
+Runs identical prompts across multiple frontier model providers via OpenRouter:
+* Supported roster: **Claude 3.5 Sonnet**, **GPT-4o**, **Gemini 1.5 Pro / Flash**, **DeepSeek V3 / R1**, and **Grok-2**.
+* **Pareto Frontier Optimization**: Identifies non-dominated models that maximize reasoning quality for minimal cost per 1,000 queries.
+* **Side-by-Side Prompt Output Inspector**: Directly inspects differences in citation fidelity, Class A alerts, and reasoning depth across all models for any question.
 
 ---
 
@@ -178,27 +220,28 @@ The agent has an optional, SQLite-backed, env-namespaced cache (`src/nga/cache/`
 
 The project includes an extensive automated test framework covering unit APIs, integration benchmarks, adversarial stress testing, and CI tracking:
 
-### 1. UI Backend & Integration Suite (`tests/test_ui_api.py`)
+### 1. UI Backend & Dashboard Integration Suite (`tests/test_ui_api.py`)
 Tests all REST endpoints, RBAC switching, HIL approval flows, and report comparison engines:
 ```bash
 uv run pytest tests/test_ui_api.py -v
 ```
 
-### 2. Stress & Adversarial Test Suite (`tests/integration/test_stress.py`)
+### 2. Evaluation Engine Test Suites
+* **Graph Quality Metrics Suite**: `uv run pytest tests/test_graph_eval.py -v`
+* **4-Tier Stepped Suite**: `uv run pytest tests/test_stepped_suite.py -v`
+* **A/B Testing & Release Gates**: `uv run pytest tests/test_release_gate.py -v`
+* **Multi-Model Arena & Pareto Frontier**: `uv run pytest tests/test_multi_model_eval.py -v`
+* **CI Evaluation Tracker**: `uv run pytest tests/test_ci_tracker.py -v`
+
+### 3. Stress & Adversarial Test Suite (`tests/integration/test_stress.py`)
 Stress tests concurrency, high load, and adversarial security:
 ```bash
 uv run pytest tests/integration/test_stress.py -v
 ```
 
-### 3. CI Evaluation Tracker Suite (`tests/test_ci_tracker.py`)
-Tests git metadata extraction, history ledger persistence, delta tracking, SVG chart rendering, and trend API endpoints:
+### 4. Running All Automated Unit Tests (108 Tests)
 ```bash
-uv run pytest tests/test_ci_tracker.py -v
-```
-
-### 4. Running All 21 Automated Tests Together
-```bash
-uv run pytest tests/test_ui_api.py tests/integration/test_stress.py tests/test_ci_tracker.py -v
+uv run pytest tests/test_*.py -v
 ```
 
 ---

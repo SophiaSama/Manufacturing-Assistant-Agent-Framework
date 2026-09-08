@@ -34,14 +34,23 @@
         <button class="nav-tab" data-tab="logs">
           <span class="tab-icon">📜</span> System Logs
         </button>
+        <button class="nav-tab" data-tab="graph">
+          <span class="tab-icon">🕸️</span> Graph Quality
+        </button>
+        <button class="nav-tab" data-tab="stepped">
+          <span class="tab-icon">🪜</span> Stepped Eval
+        </button>
         <button class="nav-tab" data-tab="eval">
-          <span class="tab-icon">📊</span> Evaluation Runner
+          <span class="tab-icon">📊</span> Eval Runner
         </button>
         <button class="nav-tab" data-tab="compare">
-          <span class="tab-icon">⚖️</span> Compare Evaluations
+          <span class="tab-icon">⚖️</span> A/B & Release Gates
+        </button>
+        <button class="nav-tab" data-tab="multimodel">
+          <span class="tab-icon">🤖</span> Multi-Model Arena
         </button>
         <button class="nav-tab" data-tab="trends">
-          <span class="tab-icon">📈</span> CI Trends & History
+          <span class="tab-icon">📈</span> CI Trends
         </button>
         <button class="nav-tab" data-tab="roles">
           <span class="tab-icon">👤</span> RBAC Roles
@@ -187,6 +196,140 @@
             </div>
           </div>
         </div>
+      <!-- TAB: GRAPH QUALITY (DASHBOARD 1) -->
+      <section class="tab-pane" id="pane-graph">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">🕸️ Quantitative Graph Quality Metrics</h2>
+              <p class="pane-subtitle">Ingestion-time monitoring across 4 quantitative dimensions: Entity Accuracy, Relation Validity, Alias Alignment, and Knowledge Coverage.</p>
+            </div>
+            <div class="pane-actions">
+              <button class="btn btn-outline" id="btn-refresh-graph-eval">🔄 Re-evaluate Graph Quality</button>
+            </div>
+          </div>
+
+          <!-- Overall Quality Metrics Row -->
+          <div class="delta-cards-grid" id="graph-quality-cards">
+            <!-- Populated dynamically via JS -->
+          </div>
+
+          <!-- Ingestion Diagnostics Grid -->
+          <div class="grid-2-col mb-4">
+            <!-- Ontology Violations -->
+            <div class="card">
+              <div class="card-header-flex">
+                <h3 class="card-title">Relation Ontology & Schema Checks</h3>
+                <span class="badge" id="badge-ontology-status">Auditing</span>
+              </div>
+              <p class="text-muted text-sm mb-3">Verifies directed triples against the plant manufacturing ontology rules.</p>
+              <div class="table-responsive">
+                <table class="data-table" id="graph-ontology-table">
+                  <thead>
+                    <tr>
+                      <th>Audited Edge</th>
+                      <th>Rule / Violation Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Entity Alignment & Alias Convergence -->
+            <div class="card">
+              <div class="card-header-flex">
+                <h3 class="card-title">Entity Alignment & Synonym Registry</h3>
+                <span class="badge" id="badge-alignment-status">Checking</span>
+              </div>
+              <p class="text-muted text-sm mb-3">Monitors whether synonym aliases correctly converge to canonical global IDs.</p>
+              <div class="table-responsive">
+                <table class="data-table" id="graph-alignment-table">
+                  <thead>
+                    <tr>
+                      <th>Alias / Synonym</th>
+                      <th>Canonical ID</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Knowledge Facts Coverage -->
+          <div class="card">
+            <h3 class="card-title">Atomic Business Facts Coverage Audit</h3>
+            <p class="text-muted text-sm mb-3">Audits whether critical SOP thresholds and plant safety criteria are reachable in the graph.</p>
+            <div class="table-responsive">
+              <table class="data-table" id="graph-coverage-table">
+                <thead>
+                  <tr>
+                    <th>Fact ID</th>
+                    <th>Core Business Fact</th>
+                    <th>Subject Node</th>
+                    <th>Object Node</th>
+                    <th>Reachable in Graph</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: STEPPED EVALUATION (DASHBOARD 2) -->
+      <section class="tab-pane" id="pane-stepped">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">🪜 4-Tier Stepped Evaluation Suite (阶梯式评测集)</h2>
+              <p class="pane-subtitle">Evaluates system degradation across 4 cognitive difficulty tiers: Single-Hop Fact → Two-Hop Relation → Three-Hop Cross-Doc → Multi-Domain Challenge.</p>
+            </div>
+          </div>
+
+          <!-- Degradation Summary & Visual Slope -->
+          <div class="card mb-4">
+            <div class="card-header-flex">
+              <h3 class="card-title">Stepped Reasoning Degradation Curve</h3>
+              <span class="badge badge-info" id="degradation-slope-badge">Slope: Calculating...</span>
+            </div>
+            <div class="stepped-chart-container" id="stepped-chart-bars">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- Tier Breakdown Table -->
+          <div class="card mb-4">
+            <h3 class="card-title">Tier Performance Matrix</h3>
+            <div class="table-responsive">
+              <table class="data-table" id="stepped-tier-table">
+                <thead>
+                  <tr>
+                    <th>Tier</th>
+                    <th>Cognitive Focus</th>
+                    <th>Total</th>
+                    <th>Passed</th>
+                    <th>Pass Rate</th>
+                    <th>Avg Score</th>
+                    <th>Avg Latency</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tier Failure Diagnostics -->
+          <div class="card">
+            <h3 class="card-title">Tier Failure Diagnostics & Bottleneck Isolation</h3>
+            <div id="stepped-diagnostics-container" class="mt-2"></div>
+          </div>
+        </div>
       </section>
 
       <!-- TAB 4: EVALUATION RUNNER -->
@@ -326,6 +469,17 @@
 
           <!-- Comparison Display -->
           <div id="compare-results-wrapper" style="display: none;">
+            <!-- Hard Release Criteria Gate Banner -->
+            <div class="card mb-4" id="release-gate-card">
+              <div class="card-header-flex">
+                <h3 class="card-title">🛡️ Automated Hard Release Criteria Gate</h3>
+                <span class="badge" id="release-gate-badge">Checking Gate...</span>
+              </div>
+              <p class="text-muted text-sm mb-3">Deterministic release criteria required before promoting candidate changes to production.</p>
+              <div class="release-gate-grid" id="release-gate-checklist"></div>
+              <div id="release-gate-reasons" class="mt-2 text-sm"></div>
+            </div>
+
             <!-- Overall Metric Delta Cards -->
             <div class="delta-cards-grid" id="compare-delta-cards"></div>
 
@@ -383,6 +537,60 @@
                 </table>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB: MULTI-MODEL ARENA (DASHBOARD 4) -->
+      <section class="tab-pane" id="pane-multimodel">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">🤖 Multi-Model A/B Evaluation Arena</h2>
+              <p class="pane-subtitle">Side-by-side prompt execution across frontier providers (Claude 3.5 Sonnet, GPT-4o, Gemini, DeepSeek, Grok) comparing quality, latency, token costs, and Pareto efficiency.</p>
+            </div>
+            <div class="pane-actions">
+              <button class="btn btn-outline" id="btn-refresh-multimodel">🔄 Refresh Leaderboard</button>
+            </div>
+          </div>
+
+          <!-- Leaderboard Table -->
+          <div class="card mb-4">
+            <h3 class="card-title">Model Leaderboard & Economics</h3>
+            <div class="table-responsive">
+              <table class="data-table" id="multimodel-leaderboard-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Provider</th>
+                    <th>Pass Rate</th>
+                    <th>Avg Score</th>
+                    <th>Latency</th>
+                    <th>Tokens/Q</th>
+                    <th>Cost / 1k Qs</th>
+                    <th>Pareto Frontier</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Pareto Efficiency Analysis Card -->
+          <div class="card mb-4">
+            <h3 class="card-title">Pareto Efficiency Frontier (Score vs Cost)</h3>
+            <p class="text-muted text-sm mb-3">Identifies non-dominated models that maximize reasoning accuracy for minimum operational inference expense.</p>
+            <div id="pareto-chart-container" class="pareto-container"></div>
+          </div>
+
+          <!-- Side-by-Side Prompt Inspector -->
+          <div class="card">
+            <div class="card-header-flex">
+              <h3 class="card-title">Side-by-Side Prompt Inspector</h3>
+              <select id="multimodel-question-select" class="form-control" style="max-width: 380px;"></select>
+            </div>
+            <div id="multimodel-question-text" class="text-muted mb-3 font-mono text-sm"></div>
+            <div class="grid-2-col" id="multimodel-side-by-side"></div>
           </div>
         </div>
       </section>

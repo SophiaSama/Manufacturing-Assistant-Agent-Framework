@@ -1,0 +1,157 @@
+{
+  "corpus": "NGA Northgate Assembly Plant Gold Knowledge Graph Benchmark",
+  "version": "1.0",
+  "documents_audited": [
+    "SOP-OPR-101",
+    "SOP-OPR-114",
+    "SOP-OPR-142",
+    "SOP-OPR-158",
+    "SOP-TEC-201",
+    "SOP-TEC-214",
+    "TEC-301",
+    "TEC-314",
+    "TEC-328",
+    "QCR-501",
+    "ESC-402",
+    "FAP-401"
+  ],
+  "gold_entities": [
+    {"id": "sop-opr-101", "type": "SOP", "name": "SOP-OPR-101 Wheel Lug Nut Tightening", "source_doc": "SOP-OPR-101"},
+    {"id": "station-144", "type": "Station", "name": "Station 144 Chassis Assembly", "source_doc": "SOP-OPR-101"},
+    {"id": "tq-6012", "type": "Machine", "name": "TorqMaster TQ-6012 DC Electric Nutrunner", "source_doc": "SOP-OPR-101"},
+    {"id": "torque-target-105nm", "type": "Threshold", "name": "105 Nm ± 5% Target Torque", "source_doc": "SOP-OPR-101"},
+    {"id": "sop-opr-114", "type": "SOP", "name": "SOP-OPR-114 Windshield Installation", "source_doc": "SOP-OPR-114"},
+    {"id": "station-131", "type": "Station", "name": "Station 131 Fluid Fill", "source_doc": "SOP-OPR-142"},
+    {"id": "sop-opr-142", "type": "SOP", "name": "SOP-OPR-142 Brake Fluid Fill", "source_doc": "SOP-OPR-142"},
+    {"id": "fluid-moisture-threshold", "type": "Threshold", "name": "1.5% Maximum Moisture Content", "source_doc": "SOP-OPR-142"},
+    {"id": "sop-opr-158", "type": "SOP", "name": "SOP-OPR-158 Torque Audit Protocol", "source_doc": "SOP-OPR-158"},
+    {"id": "tq-6018", "type": "Machine", "name": "TorqMaster TF-6000 (TQ-6018) Audit Wrench", "source_doc": "SOP-OPR-158"},
+    {"id": "sop-tec-201", "type": "SOP", "name": "SOP-TEC-201 Weld Robot Maintenance", "source_doc": "SOP-TEC-201"},
+    {"id": "sop-tec-214", "type": "SOP", "name": "SOP-TEC-214 Torque Tool Calibration", "source_doc": "SOP-TEC-214"},
+    {"id": "drift-threshold-2pct", "type": "Threshold", "name": "2.0% Maximum Drift Threshold", "source_doc": "SOP-TEC-214"},
+    {"id": "tec-301", "type": "Procedure", "name": "TEC-301 Weld Robot Specifications", "source_doc": "TEC-301"},
+    {"id": "weld-cap-life-4000", "type": "Threshold", "name": "4,000 Weld Cycles Cap Life Limit", "source_doc": "TEC-301"},
+    {"id": "tec-314", "type": "Procedure", "name": "TEC-314 Fastener Tooling Standards", "source_doc": "TEC-314"},
+    {"id": "tec-328", "type": "Procedure", "name": "TEC-328 Pallet and Conveyor Alignment", "source_doc": "TEC-328"},
+    {"id": "qcr-501", "type": "RecallCriteria", "name": "QCR-501 Quality Recall Criteria", "source_doc": "QCR-501"},
+    {"id": "class-a-defect", "type": "DefectCode", "name": "Class A Safety Critical Defect", "source_doc": "QCR-501"},
+    {"id": "esc-402", "type": "EscalationLevel", "name": "ESC-402 Plant Escalation Protocol", "source_doc": "ESC-402"},
+    {"id": "fap-401", "type": "Procedure", "name": "FAP-401 Failure Analysis & 8D Process", "source_doc": "FAP-401"},
+    {"id": "aurora-au-2025", "type": "Part", "name": "Aurora AU-2025 Vehicle Platform", "source_doc": "SOP-OPR-101"},
+    {"id": "solstice-so-2025", "type": "Part", "name": "Solstice SO-2025 Vehicle Platform", "source_doc": "SOP-OPR-101"}
+  ],
+  "gold_relations": [
+    {"source": "sop-opr-101", "relation": "requires", "target": "tq-6012", "source_doc": "SOP-OPR-101"},
+    {"source": "tq-6012", "relation": "monitors", "target": "torque-target-105nm", "source_doc": "SOP-OPR-101"},
+    {"source": "sop-opr-101", "relation": "documented_in", "target": "station-144", "source_doc": "SOP-OPR-101"},
+    {"source": "tq-6012", "relation": "audited_by", "target": "tq-6018", "source_doc": "SOP-OPR-158"},
+    {"source": "tq-6012", "relation": "documented_in", "target": "sop-tec-214", "source_doc": "SOP-TEC-214"},
+    {"source": "sop-tec-214", "relation": "threshold_for", "target": "drift-threshold-2pct", "source_doc": "SOP-TEC-214"},
+    {"source": "sop-opr-142", "relation": "threshold_for", "target": "fluid-moisture-threshold", "source_doc": "SOP-OPR-142"},
+    {"source": "sop-opr-142", "relation": "documented_in", "target": "station-131", "source_doc": "SOP-OPR-142"},
+    {"source": "tec-301", "relation": "threshold_for", "target": "weld-cap-life-4000", "source_doc": "TEC-301"},
+    {"source": "class-a-defect", "relation": "escalates_to", "target": "esc-402", "source_doc": "ESC-402"},
+    {"source": "class-a-defect", "relation": "triggers_recall", "target": "qcr-501", "source_doc": "QCR-501"},
+    {"source": "class-a-defect", "relation": "requires", "target": "fap-401", "source_doc": "FAP-401"}
+  ],
+  "gold_synonyms": [
+    {
+      "canonical_id": "tq-6018",
+      "aliases": ["TQ-6018", "TorqMaster TF-6000", "TF-6000", "TQ 6018", "audit wrench TQ-6018"]
+    },
+    {
+      "canonical_id": "tq-6012",
+      "aliases": ["TQ-6012", "TorqMaster 6012", "TQ6012", "Station 144 nutrunner", "TorqMaster TQ-6012"]
+    },
+    {
+      "canonical_id": "aurora-au-2025",
+      "aliases": ["Aurora", "AU-2025", "Aurora AU-2025", "AU25", "Aurora 2025"]
+    },
+    {
+      "canonical_id": "solstice-so-2025",
+      "aliases": ["Solstice", "SO-2025", "Solstice SO-2025", "SO25", "Solstice 2025"]
+    },
+    {
+      "canonical_id": "sop-opr-101",
+      "aliases": ["SOP-OPR-101", "SOP 101", "Lug nut torque SOP", "Wheel tightening procedure"]
+    },
+    {
+      "canonical_id": "qcr-501",
+      "aliases": ["QCR-501", "QCR501", "Quality Recall Criteria", "Recall standard 501"]
+    },
+    {
+      "canonical_id": "sop-tec-214",
+      "aliases": ["SOP-TEC-214", "TEC-214", "Torque tool calibration procedure", "SOP 214"]
+    },
+    {
+      "canonical_id": "class-a-defect",
+      "aliases": ["Class A", "Class A defect", "safety-critical defect", "Class-A"]
+    }
+  ],
+  "gold_atomic_facts": [
+    {
+      "id": "FACT-01",
+      "fact": "Wheel lug nut torque target at Station 144 is 105 Nm ± 5%",
+      "subject": "tq-6012",
+      "predicate": "targets_torque",
+      "object": "torque-target-105nm",
+      "source_doc": "SOP-OPR-101"
+    },
+    {
+      "id": "FACT-02",
+      "fact": "TQ-6012 maximum allowable calibration drift is 2%",
+      "subject": "tq-6012",
+      "predicate": "threshold_for",
+      "object": "drift-threshold-2pct",
+      "source_doc": "SOP-TEC-214"
+    },
+    {
+      "id": "FACT-03",
+      "fact": "Brake fluid moisture content threshold is maximum 1.5%",
+      "subject": "station-131",
+      "predicate": "threshold_for",
+      "object": "fluid-moisture-threshold",
+      "source_doc": "SOP-OPR-142"
+    },
+    {
+      "id": "FACT-04",
+      "fact": "Weld robot electrode cap life hard limit is 4,000 welds",
+      "subject": "sop-tec-201",
+      "predicate": "threshold_for",
+      "object": "weld-cap-life-4000",
+      "source_doc": "TEC-301"
+    },
+    {
+      "id": "FACT-05",
+      "fact": "Torque audit tool TQ-6018 verifies Station 144 tightening every 2 hours",
+      "subject": "tq-6018",
+      "predicate": "audited_by",
+      "object": "tq-6012",
+      "source_doc": "SOP-OPR-158"
+    },
+    {
+      "id": "FACT-06",
+      "fact": "Class A safety defects mandate Level 4 escalation within 1 hour",
+      "subject": "class-a-defect",
+      "predicate": "escalates_to",
+      "object": "esc-402",
+      "source_doc": "ESC-402"
+    },
+    {
+      "id": "FACT-07",
+      "fact": "Class A defects mandate 8D root-cause investigation under FAP-401",
+      "subject": "class-a-defect",
+      "predicate": "requires",
+      "object": "fap-401",
+      "source_doc": "FAP-401"
+    },
+    {
+      "id": "FACT-08",
+      "fact": "QCR-501 governs safety-critical recall containment criteria",
+      "subject": "class-a-defect",
+      "predicate": "triggers_recall",
+      "object": "qcr-501",
+      "source_doc": "QCR-501"
+    }
+  ]
+}
