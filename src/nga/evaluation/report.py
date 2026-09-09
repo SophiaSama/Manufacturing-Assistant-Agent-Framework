@@ -112,7 +112,7 @@ def generate_markdown_report(
         tier_val = getattr(r, "tier", "L2")
         lines.append(
             f"| {r.question_id} | {tier_val} | {r.category} | {r.overall_score:.3f} "
-            f"| {status} | {r.latency_s:.2f}s | {tools} | {err} |"
+            f"| {status} | {r.latency_s:.2f}s | {tools} | {r.error or '—'} |"
         )
 
     # Failed cases detail
