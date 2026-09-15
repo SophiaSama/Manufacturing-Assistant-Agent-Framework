@@ -13,6 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
 
+    # Budget-friendly eval stack: a single fast, cheap, credit-affordable chat
+    # model for all tiers. OpenRouter's :free tier proved unusable (throttled /
+    # capacity-exhausted) and the default Claude slugs 402 on a low-credit key
+    # because worst-case 64k output exceeds the balance. gemini-2.5-flash-lite
+    # costs ~$0.20/M out, supports function calling, and passes the affordability
+    # gate (~$0.026 worst case vs the key's balance).
+    #
+    # Embeddings: qwen/qwen3-embedding-4b flaps to a batch-only endpoint, so sync
+    # query embeddings intermittently 404 and retrieval silently returns nothing
+    # (has_doc_source failures). openai/text-embedding-3-small is stable on the
+    # sync /embeddings endpoint (1536 dims, ~$0.02/M).
+    env:
+      OPENROUTER_MODEL: google/gemini-2.5-flash-lite
+      RAG_TIER1_MODEL: google/gemini-2.5-flash-lite
+      RAG_TIER2_MODEL: google/gemini-2.5-flash-lite
+      RAG_TIER3_MODEL: google/gemini-2.5-flash-lite
+      EMBEDDING_MODEL: openai/text-embedding-3-small
+      EMBEDDING_STRATEGY: sequential
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,9 +57,25 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
         run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py -v
 
+      # CI runners start from a fresh checkout where data/ (vector store, graph
+      # store) is gitignored and therefore absent. Without an ingested corpus the
+      # eval agent searches an empty store, every document-grounded question fails
+      # its has_doc_source check, and the report shows 0% pass — even with a valid
+      # OPENROUTER_API_KEY (the pre-fix symptom was a 401 on every LLM call because
+      # the secret was unset and the mock fallback key was used). Build the main
+      # corpus here so the benchmark actually exercises retrieval.
+      # EMBEDDING_STRATEGY=sequential avoids the OpenRouter beta batches endpoint
+      # (submit + poll) and keeps this step deterministic.
+      - name: Build retrieval corpus for evaluation
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          EMBEDDING_STRATEGY: sequential
+        run: uv run python -m nga.ingestion.build_vector_store --profile main
+
       - name: Execute Evaluation Benchmark Suite
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          EMBEDDING_STRATEGY: sequential
         run: |
           # Run benchmark smoke evaluation across categories
           uv run python -c "
@@ -70,6 +105,7 @@ jobs:
             --report-file "$LATEST_REPORT" \
             --generate-svg "reports/eval/trends.svg" \
             --github-summary \
+            --fail-on-regression \
             --threshold 0.70
 
       - name: Upload Evaluation Reports & Trend Artifacts
