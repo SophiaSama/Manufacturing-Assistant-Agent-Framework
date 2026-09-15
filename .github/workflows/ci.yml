@@ -19,11 +19,18 @@ jobs:
     # because worst-case 64k output exceeds the balance. gemini-2.5-flash-lite
     # costs ~$0.20/M out, supports function calling, and passes the affordability
     # gate (~$0.026 worst case vs the key's balance).
+    #
+    # Embeddings: qwen/qwen3-embedding-4b flaps to a batch-only endpoint, so sync
+    # query embeddings intermittently 404 and retrieval silently returns nothing
+    # (has_doc_source failures). openai/text-embedding-3-small is stable on the
+    # sync /embeddings endpoint (1536 dims, ~$0.02/M).
     env:
       OPENROUTER_MODEL: google/gemini-2.5-flash-lite
       RAG_TIER1_MODEL: google/gemini-2.5-flash-lite
       RAG_TIER2_MODEL: google/gemini-2.5-flash-lite
       RAG_TIER3_MODEL: google/gemini-2.5-flash-lite
+      EMBEDDING_MODEL: openai/text-embedding-3-small
+      EMBEDDING_STRATEGY: sequential
 
     steps:
       - name: Checkout repository
