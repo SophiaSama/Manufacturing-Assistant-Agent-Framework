@@ -30,3 +30,7 @@ reports/
 # ground-truth.md is intentionally NOT committed to prevent leakage
 TEST_REVIEW_SUMMARY.md
 docs/
+
+#Cache
+.pytest_cache/
+.ruff_cache/
