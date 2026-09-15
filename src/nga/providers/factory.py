@@ -52,4 +52,8 @@ def make_chat_model(settings: Settings, model_override: str | None = None) -> Ba
         model=model_override or settings.openrouter_model,
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
+        # Bound request time so a single stalled upstream call cannot freeze
+        # the eval/agent loop (the OpenAI SDK default is 600s).
+        timeout=60.0,
+        max_retries=2,
     )
