@@ -283,3 +283,44 @@ def test_chat_endpoint_mocked(client, monkeypatch):
     assert "105 Nm" in data["rendered_answer"]
     assert len(data["trace_steps"]) == 2
 
+
+def test_graph_quality_api(client):
+    res = client.get("/api/eval/graph-quality")
+    assert res.status_code == 200
+    data = res.json()
+    assert "graph_quality_index" in data
+    assert "entity_extraction" in data
+    assert "relation_extraction" in data
+    assert "entity_alignment" in data
+    assert "knowledge_coverage" in data
+
+
+def test_stepped_suite_api(client):
+    res = client.get("/api/eval/stepped-suite")
+    assert res.status_code == 200
+    data = res.json()
+    assert "tiers" in data
+    assert len(data["tiers"]) == 4
+    tier_names = [t["tier"] for t in data["tiers"]]
+    assert tier_names == ["L1", "L2", "L3", "L4"]
+
+
+def test_models_and_multi_model_api(client):
+    # 1. Models endpoint
+    res_models = client.get("/api/eval/models")
+    assert res_models.status_code == 200
+    models_data = res_models.json()
+    assert "models" in models_data
+    assert "anthropic/claude-3.5-sonnet" in models_data["models"]
+
+    # 2. Multi-model benchmark endpoint
+    res_mm = client.post("/api/eval/multi-model", json={
+        "models": ["deepseek/deepseek-chat", "google/gemini-1.5-flash"],
+        "questions_limit": 5,
+    })
+    assert res_mm.status_code == 200
+    mm_data = res_mm.json()
+    assert "models" in mm_data
+    assert len(mm_data["models"]) == 2
+    assert "pareto_efficient_models" in mm_data
+

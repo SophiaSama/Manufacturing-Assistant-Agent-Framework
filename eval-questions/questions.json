@@ -12,7 +12,10 @@
         "SOP-OPR-101"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R2",
@@ -23,7 +26,10 @@
         "SOP-OPR-101"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R3",
@@ -34,7 +40,10 @@
         "SOP-OPR-158"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R4",
@@ -45,7 +54,10 @@
         "SOP-OPR-158"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R5",
@@ -56,7 +68,10 @@
         "SOP-OPR-114"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R6",
@@ -67,7 +82,10 @@
         "SOP-OPR-114"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R7",
@@ -78,7 +96,10 @@
         "SOP-OPR-114"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R8",
@@ -89,7 +110,10 @@
         "SOP-OPR-127"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R9",
@@ -100,7 +124,10 @@
         "SOP-OPR-127"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R10",
@@ -111,7 +138,10 @@
         "SOP-OPR-142"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R11",
@@ -122,7 +152,10 @@
         "SOP-OPR-142"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R12",
@@ -133,7 +166,10 @@
         "SOP-TEC-201"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R13",
@@ -144,7 +180,10 @@
         "SOP-TEC-201"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R14",
@@ -156,7 +195,10 @@
         "SOP-TEC-201"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R15",
@@ -167,7 +209,10 @@
         "TEC-314"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R16",
@@ -179,7 +224,10 @@
         "TEC-314"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R17",
@@ -190,7 +238,10 @@
         "SOP-TEC-214"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R18",
@@ -201,7 +252,10 @@
         "TEC-328"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R19",
@@ -213,7 +267,10 @@
         "SOP-TEC-228"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R20",
@@ -224,7 +281,10 @@
         "TEC-342"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R21",
@@ -235,7 +295,10 @@
         "TEC-342"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R22",
@@ -246,7 +309,10 @@
         "FAP-401"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R23",
@@ -257,7 +323,10 @@
         "FAP-401"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R24",
@@ -268,7 +337,10 @@
         "ESC-402"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R25",
@@ -280,7 +352,10 @@
         "QCR-501"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R26",
@@ -291,7 +366,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R27",
@@ -302,7 +380,10 @@
         "QCR-501"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R28",
@@ -313,7 +394,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R29",
@@ -324,7 +408,10 @@
         "QCR-501"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "R30",
@@ -335,7 +422,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "vector_dense_retrieval"
     },
     {
       "id": "M1",
@@ -348,7 +438,10 @@
         "FAP-401"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "graph_explicit_relation"
     },
     {
       "id": "M2",
@@ -362,7 +455,10 @@
         "TEC-314"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "graph_explicit_relation"
     },
     {
       "id": "M3",
@@ -375,7 +471,10 @@
         "SOP-TEC-201"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "graph_explicit_relation"
     },
     {
       "id": "M4",
@@ -387,7 +486,10 @@
         "SOP-TEC-201"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "graph_explicit_relation"
     },
     {
       "id": "M5",
@@ -400,7 +502,10 @@
         "QCR-501"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M6",
@@ -414,7 +519,10 @@
         "FAP-401"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M7",
@@ -425,7 +533,10 @@
         "SOP-OPR-142"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M8",
@@ -438,7 +549,10 @@
         "FAP-401"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M9",
@@ -450,7 +564,10 @@
         "FAP-401"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M10",
@@ -461,7 +578,10 @@
         "QCR-501"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M11",
@@ -474,7 +594,10 @@
         "FAP-401"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "M12",
@@ -486,7 +609,10 @@
         "SOP-TEC-214"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "hybrid_graphrag_cross_document"
     },
     {
       "id": "S1",
@@ -501,7 +627,10 @@
         "QCR-501"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "two_hop_scenario_resolution"
     },
     {
       "id": "S2",
@@ -513,7 +642,10 @@
         "ESC-402"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "two_hop_scenario_resolution"
     },
     {
       "id": "S3",
@@ -526,7 +658,10 @@
         "SCAR-2025-007"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "two_hop_scenario_resolution"
     },
     {
       "id": "S4",
@@ -539,7 +674,10 @@
         "ESC-402"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "multi_stage_containment"
     },
     {
       "id": "S5",
@@ -552,7 +690,10 @@
         "FAP-401"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "multi_stage_containment"
     },
     {
       "id": "S6",
@@ -564,7 +705,10 @@
         "TEC-342"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "cross_domain_systemic_challenge"
     },
     {
       "id": "S7",
@@ -576,7 +720,10 @@
         "SOP-OPR-101"
       ],
       "difficulty": "easy",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "cross_domain_systemic_challenge"
     },
     {
       "id": "S8",
@@ -587,7 +734,10 @@
         "SOP-OPR-114"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "cross_domain_systemic_challenge"
     },
     {
       "id": "E1",
@@ -599,7 +749,10 @@
         "ESC-402"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "policy_fact_lookup"
     },
     {
       "id": "E2",
@@ -610,7 +763,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "policy_fact_lookup"
     },
     {
       "id": "E3",
@@ -621,7 +777,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "policy_fact_lookup"
     },
     {
       "id": "E4",
@@ -633,7 +792,10 @@
         "FAP-401"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "two_hop_escalation_logic"
     },
     {
       "id": "E5",
@@ -645,7 +807,10 @@
         "SCAR-2025-007"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "two_hop_escalation_logic"
     },
     {
       "id": "E6",
@@ -657,7 +822,10 @@
         "SOP-OPR-114"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "two_hop_escalation_logic"
     },
     {
       "id": "E7",
@@ -668,7 +836,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "regulatory_cross_doc_synthesis"
     },
     {
       "id": "E8",
@@ -679,7 +850,10 @@
         "QCR-501"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "regulatory_cross_doc_synthesis"
     },
     {
       "id": "E9",
@@ -691,7 +865,10 @@
         "FAP-401"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "regulatory_cross_doc_synthesis"
     },
     {
       "id": "E10",
@@ -704,7 +881,10 @@
         "ESC-402"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "regulatory_cross_doc_synthesis"
     },
     {
       "id": "SQL1",
@@ -713,7 +893,10 @@
       "expected_answer": "9",
       "source_docs": [],
       "difficulty": "easy",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "text_to_sql_single_table"
     },
     {
       "id": "SQL2",
@@ -722,7 +905,10 @@
       "expected_answer": "7",
       "source_docs": [],
       "difficulty": "easy",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "text_to_sql_single_table"
     },
     {
       "id": "SQL3",
@@ -731,7 +917,10 @@
       "expected_answer": "NGA-AU25-0015 (3 nuts)",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "text_to_sql_single_table"
     },
     {
       "id": "SQL4",
@@ -740,7 +929,10 @@
       "expected_answer": "A: 0%, B: 0.53%, C: 1.12% (5 of 445 on Shift C)",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "text_to_sql_single_table"
     },
     {
       "id": "SQL5",
@@ -749,7 +941,10 @@
       "expected_answer": "AU-0015/0016/0017 QUARANTINED (torque); SO-0016 HELD (film build)",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L1",
+      "hop_count": 1,
+      "target_capability": "text_to_sql_single_table"
     },
     {
       "id": "SQL6",
@@ -758,7 +953,10 @@
       "expected_answer": "FL-88200 lot FW-2025-03-30, qty 150",
       "source_docs": [],
       "difficulty": "easy",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "sql_multi_table_join"
     },
     {
       "id": "SQL7",
@@ -767,7 +965,10 @@
       "expected_answer": "NC-2025-0137 (TORQUE-LOW, escalation L4 OPEN); NC-2025-0150 (P-122, escalation L2 closed, NC open)",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "sql_multi_table_join"
     },
     {
       "id": "SQL8",
@@ -776,7 +977,10 @@
       "expected_answer": "WO-2025-0440 (PT-ROB-03, P-122, Ana Souza)",
       "source_docs": [],
       "difficulty": "easy",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "sql_multi_table_join"
     },
     {
       "id": "SQL9",
@@ -785,7 +989,10 @@
       "expected_answer": "NGA-AU25-0015, 0016, 0017",
       "source_docs": [],
       "difficulty": "easy",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "sql_multi_table_join"
     },
     {
       "id": "SQL10",
@@ -794,7 +1001,10 @@
       "expected_answer": "3 of 9 built = 33.3% (far exceeds 0.5%)",
       "source_docs": [],
       "difficulty": "hard",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "sql_multi_table_join"
     },
     {
       "id": "SQL11",
@@ -803,7 +1013,10 @@
       "expected_answer": "NC-2025-0137: 75 min; NC-2025-0142: 125 min; NC-2025-0150: 165 min",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L2",
+      "hop_count": 2,
+      "target_capability": "sql_multi_table_join"
     },
     {
       "id": "SQL12",
@@ -812,7 +1025,10 @@
       "expected_answer": "E-3002 James Park (SOP-TEC-214)",
       "source_docs": [],
       "difficulty": "easy",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "sql_aggregation_and_threshold"
     },
     {
       "id": "SQL13",
@@ -821,7 +1037,10 @@
       "expected_answer": "Station 168 (3 TORQUE-LOW)",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "sql_aggregation_and_threshold"
     },
     {
       "id": "SQL14",
@@ -830,7 +1049,10 @@
       "expected_answer": "L2 Marcus Reed \u2192 L3 Miguel Santos \u2192 L4 Dana Whitfield (OPEN)",
       "source_docs": [],
       "difficulty": "medium",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "sql_aggregation_and_threshold"
     },
     {
       "id": "SQL15",
@@ -839,7 +1061,10 @@
       "expected_answer": "C3 met; FA-2025-001 CAMPAIGN, EVALUATION, 42 units, criterion C3",
       "source_docs": [],
       "difficulty": "hard",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L3",
+      "hop_count": 3,
+      "target_capability": "sql_aggregation_and_threshold"
     },
     {
       "id": "STR1",
@@ -854,7 +1079,10 @@
         "QCR-501"
       ],
       "difficulty": "hard",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR2",
@@ -867,7 +1095,10 @@
         "SOP-OPR-101"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR3",
@@ -879,7 +1110,10 @@
         "SOP-TEC-201"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR4",
@@ -888,20 +1122,26 @@
       "expected_answer": "Sanitized query safely handled; no records or parameter mismatch; no database modification allowed",
       "source_docs": [],
       "difficulty": "hard",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR5",
       "category": "stress",
       "question": "TQ-6012 was calibrated at 105 Nm but dynamic torque auditor TQ-6018 measures 102.5 Nm on vehicle AU25-0012. Is this within tolerance, is there a calibration drift violation, and does it require opening an NC?",
-      "expected_answer": "102.5 Nm is within 105 ± 5% (99.75-110.25 Nm); both tools within ±1.5% measurement accuracy (TEC-314); no NC required unless drift >2%",
+      "expected_answer": "102.5 Nm is within 105 \u00b1 5% (99.75-110.25 Nm); both tools within \u00b11.5% measurement accuracy (TEC-314); no NC required unless drift >2%",
       "source_docs": [
         "SOP-OPR-101",
         "TEC-314",
         "SOP-TEC-214"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR6",
@@ -910,13 +1150,16 @@
       "expected_answer": "FL-88200 lot FW-2025-03-30 (150 qty); WO-2025-0440 (PT-ROB-03, P-122); NC-2025-0137 (TORQUE-LOW, Class A)",
       "source_docs": [],
       "difficulty": "hard",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR7",
       "category": "stress",
       "question": "What is the exact torque specification, tolerance band, bolt sequence, auditor tool ID, calibration frequency, and maximum allowable drift across all assembly stations?",
-      "expected_answer": "105 ± 5% Nm, Star 1-3-5-2-4 (SOP-OPR-101); 62 ± 2 Nm + 90° (SOP-OPR-127); TQ-6018 (SOP-OPR-158); 3 months / 100k cycles, 2% drift (SOP-TEC-214)",
+      "expected_answer": "105 \u00b1 5% Nm, Star 1-3-5-2-4 (SOP-OPR-101); 62 \u00b1 2 Nm + 90\u00b0 (SOP-OPR-127); TQ-6018 (SOP-OPR-158); 3 months / 100k cycles, 2% drift (SOP-TEC-214)",
       "source_docs": [
         "SOP-OPR-101",
         "SOP-OPR-127",
@@ -924,7 +1167,10 @@
         "SOP-TEC-214"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR8",
@@ -939,18 +1185,24 @@
         "FAP-401"
       ],
       "difficulty": "hard",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR9",
       "category": "stress",
       "question": "Ambient shop temperature drops to 11 deg C during Shift C. An operator applies windshield adhesive at 23:30. Shift ends at 06:30. Can the vehicle be released to water test at 05:00?",
-      "expected_answer": "No - winter protocol below 15 deg C requires 6 hours minimum cure (SOP-OPR-114 §4.4); ready at 05:30; 05:00 is only 5.5 hours",
+      "expected_answer": "No - winter protocol below 15 deg C requires 6 hours minimum cure (SOP-OPR-114 \u00a74.4); ready at 05:30; 05:00 is only 5.5 hours",
       "source_docs": [
         "SOP-OPR-114"
       ],
       "difficulty": "medium",
-      "requires_sql": false
+      "requires_sql": false,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     },
     {
       "id": "STR10",
@@ -962,7 +1214,10 @@
         "SOP-OPR-101"
       ],
       "difficulty": "hard",
-      "requires_sql": true
+      "requires_sql": true,
+      "tier": "L4",
+      "hop_count": 4,
+      "target_capability": "multi_domain_stress_adversarial"
     }
   ]
 }

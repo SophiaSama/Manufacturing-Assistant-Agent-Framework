@@ -22,6 +22,7 @@ class ScoreResult:
     latency_s: float = 0.0
     error: str | None = None
     cache_stats: dict | None = None  # per-layer hit/miss/ms when cache hot
+    tier: str = "L2"
 
 
 def _parsed_tool_payloads(tool_outputs: list[str] | None) -> list[dict]:
@@ -115,6 +116,7 @@ def score_answer(
     latency_s: float = 0.0,
     error: str | None = None,
     cache_stats: dict | None = None,
+    tier: str = "L2",
 ) -> ScoreResult:
     checks = deterministic_checks(
         answer, expected_tools, tools_called, source_docs,
@@ -145,4 +147,5 @@ def score_answer(
         latency_s=latency_s,
         error=error,
         cache_stats=cache_stats,
+        tier=tier,
     )
