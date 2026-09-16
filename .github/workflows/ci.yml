@@ -102,6 +102,7 @@ jobs:
             --threshold 0.70
 
       - name: Upload Evaluation Reports & Trend Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nga-evaluation-history
