@@ -1,8 +1,6 @@
 """Tests for Multi-Model Evaluation Arena & Pareto calculations."""
 
-import pytest
 from nga.evaluation.multi_model_eval import (
-    MODEL_REGISTRY,
     calculate_query_cost,
     compute_pareto_frontier,
     generate_multi_model_analysis,
