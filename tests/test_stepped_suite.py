@@ -1,9 +1,6 @@
 """Tests for the 4-Tier Stepped Evaluation Test Suite."""
 
-import pytest
 from nga.evaluation.stepped_suite import (
-    TIER_NAMES,
-    TIER_TARGETS,
     compute_stepped_summary,
     load_stepped_questions,
 )

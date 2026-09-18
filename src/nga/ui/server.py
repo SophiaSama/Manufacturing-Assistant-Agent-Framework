@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import uuid
@@ -20,13 +21,13 @@ from pydantic import BaseModel, Field
 
 from nga.cache import CachedEmbeddings, make_cache_from_settings
 from nga.config import Settings
+from nga.evaluation.baseline_eval import run_baseline_ab_analysis
 from nga.evaluation.ci_tracker import (
     generate_svg_trend_chart,
     get_trend_series,
     load_history,
     record_eval_run,
 )
-from nga.evaluation.baseline_eval import run_baseline_ab_analysis
 from nga.evaluation.eval_runner import (
     compare_evaluation_runs,
     get_evaluation_report,
@@ -35,9 +36,14 @@ from nga.evaluation.eval_runner import (
     run_evaluation_suite,
 )
 from nga.evaluation.graph_eval import evaluate_graph_quality
-from nga.evaluation.multi_model_eval import MODEL_REGISTRY, generate_multi_model_analysis
+from nga.evaluation.multi_model_eval import (
+    MODEL_REGISTRY,
+    generate_multi_model_analysis,
+)
 from nga.evaluation.release_gate import evaluate_release_gate
-from nga.evaluation.stepped_suite import TIER_NAMES, TIER_TARGETS, compute_stepped_summary
+from nga.evaluation.stepped_suite import (
+    compute_stepped_summary,
+)
 from nga.graph.orchestrator import build_orchestrator
 from nga.ingestion.build_graph import load_graph
 from nga.ingestion.build_vector_store import open_vector_store

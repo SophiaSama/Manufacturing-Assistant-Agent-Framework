@@ -47,6 +47,28 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
     all_lats = [r.latency_s for r in results]
     stepped_sum = compute_stepped_summary(results)
 
+    # Grounding aggregation
+    grounded_results = [r for r in results if r.grounding is not None]
+    grounding_summary: dict[str, Any] | None = None
+    if grounded_results:
+        g_scores = [r.grounding.grounding_score for r in grounded_results]
+        c_scores = [r.grounding.citation_validity_score for r in grounded_results]
+        p_scores = [r.grounding.provenance_score for r in grounded_results]
+        all_fabricated: list[str] = []
+        all_orphan: list[str] = []
+        for r in grounded_results:
+            all_fabricated.extend(r.grounding.fabricated_citations)
+            all_orphan.extend(r.grounding.orphan_citations)
+        grounding_summary = {
+            "avg_grounding_score": round(sum(g_scores) / len(g_scores), 3),
+            "avg_citation_validity": round(sum(c_scores) / len(c_scores), 3),
+            "avg_provenance": round(sum(p_scores) / len(p_scores), 3),
+            "total_fabricated_citations": len(all_fabricated),
+            "fabricated_citations": all_fabricated,
+            "total_orphan_citations": len(all_orphan),
+            "orphan_citations": all_orphan,
+        }
+
     return {
         "total": total,
         "passed": passed,
@@ -56,6 +78,7 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
         "by_category": cat_summary,
         "by_tier": stepped_sum.get("tiers", []),
         "stepped_summary": stepped_sum,
+        "grounding": grounding_summary,
     }
 
 

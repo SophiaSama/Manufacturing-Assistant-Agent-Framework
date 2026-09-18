@@ -1,6 +1,7 @@
 """Tests for Automated Hard Release Criteria and Regression Safeguards."""
 
 import pytest
+
 from nga.evaluation.release_gate import evaluate_release_gate
 
 

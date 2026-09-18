@@ -199,6 +199,7 @@ def record_eval_run(
             "avg_latency_s": avg_latency,
             "by_category": summary.get("by_category", []),
             "by_tier": summary.get("by_tier", []),
+            "grounding": summary.get("grounding"),
             "stepped_summary": report_data.get("stepped_summary") or summary.get("stepped_summary"),
         },
         "delta_from_previous": delta,
@@ -378,6 +379,19 @@ def generate_ci_markdown_summary(
         cat_badge = "✅" if cat_pr >= threshold else "⚠️"
         lines.append(
             f"| **{cat.get('category')}** | {cat.get('total')} | {cat.get('passed')} | {cat_badge} {cat_pr:.1f}% | {cat.get('avg_score', 0):.3f} | {cat.get('avg_latency_s', 0):.2f}s |"
+        )
+
+    grounding_data = summary.get("grounding")
+    if grounding_data:
+        lines.append("")
+        lines.append("### 🔍 Retrieval Grounding")
+        lines.append("| Avg Grounding Score | Avg Citation Validity | Avg Provenance | Fabricated Citations |")
+        lines.append("|---|---|---|---|")
+        lines.append(
+            f"| {grounding_data.get('avg_grounding_score', 0):.3f} "
+            f"| {grounding_data.get('avg_citation_validity', 0):.3f} "
+            f"| {grounding_data.get('avg_provenance', 0):.3f} "
+            f"| {grounding_data.get('total_fabricated_citations', 0)} |"
         )
 
     lines.append("")

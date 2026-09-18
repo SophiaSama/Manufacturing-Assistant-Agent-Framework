@@ -2,6 +2,7 @@
 
 import networkx as nx
 import pytest
+
 from nga.evaluation.graph_eval import (
     evaluate_entity_alignment,
     evaluate_entity_extraction,

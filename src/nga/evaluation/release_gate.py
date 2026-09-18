@@ -12,10 +12,8 @@ hard release criteria before deployment to production:
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("nga.evaluation.release_gate")
@@ -27,6 +25,8 @@ DEFAULT_RELEASE_CRITERIA = {
     "min_class_a_safety_acc": 1.00,
     "max_avg_latency_s": 12.0,
     "require_sql_sanitization": True,
+    "min_grounding_score": 0.85,
+    "max_fabricated_citations": 0,
 }
 
 

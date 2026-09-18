@@ -253,7 +253,6 @@ def evaluate_knowledge_coverage(graph: Any, gold_atomic_facts: list[dict[str, An
         return {"knowledge_coverage_rate": 1.0, "total_facts": 0, "covered_facts": 0}
 
     nodes = {str(n).lower() for n in (graph.nodes() if graph else [])}
-    edges = list(graph.edges()) if graph else []
 
     covered_facts = 0
     fact_results = []

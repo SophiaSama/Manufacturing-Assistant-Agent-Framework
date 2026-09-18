@@ -1,7 +1,7 @@
 """Tests for report generation — covers the generate_markdown_report path
 that previously crashed with an undefined `err` variable."""
 
-from nga.evaluation.report import generate_markdown_report, build_summary
+from nga.evaluation.report import build_summary, generate_markdown_report
 from nga.evaluation.scoring import ScoreResult
 
 
