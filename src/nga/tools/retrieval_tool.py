@@ -120,6 +120,9 @@ def retrieve_documents(
                     "ALL retrieval categories failed for query=%r: %s",
                     query, errors[0],
                 )
+        if results:
+            from enterprise_agent.retrieval.reranker import rerank_documents
+            results = rerank_documents(query=query, documents=results, top_n=k)
         return results
 
     from nga.cache.layers import cached_retrieve
@@ -174,9 +177,9 @@ def build_retrieval_payload(
     results: list[dict[str, Any]],
     graph_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a JSON-serializable retrieval result payload."""
-    references = [
-        {
+    references: list[dict[str, Any]] = []
+    for r in results:
+        ref = {
             "doc_id": r.get("doc_id"),
             "doc_name": r.get("doc_name"),
             "section": r.get("section"),
@@ -184,8 +187,9 @@ def build_retrieval_payload(
             "category": r.get("category"),
             "corpus_source": r.get("corpus_source", "canonical"),
         }
-        for r in results
-    ]
+        if "rerank_score" in r:
+            ref["rerank_score"] = r["rerank_score"]
+        references.append(ref)
     payload: dict[str, Any] = {
         "query": query,
         "categories": categories,

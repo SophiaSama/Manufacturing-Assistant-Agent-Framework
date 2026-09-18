@@ -21,6 +21,7 @@ dependencies = [
     "PyJWT>=2.8.0",
     "markdown-it-py>=3.0.0",
     "pytest-html>=4.1.1",
+    "litellm>=1.50.0",
 ]
 
 [dependency-groups]

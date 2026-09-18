@@ -96,16 +96,33 @@ def make_generic_retrieval_tool(
     @tool(tool_name)
     def retrieval_tool_func(query: str, categories: list[str] | None = None) -> str:
         docs = retrieve_fn(query, categories)
+        doc_candidates = []
+        for d in docs:
+            text = d.page_content if hasattr(d, "page_content") else str(d.get("text", d))
+            meta = d.metadata if hasattr(d, "metadata") else (d if isinstance(d, dict) else {})
+            doc_candidates.append({
+                "text": text,
+                "metadata": meta,
+                "doc_id": meta.get("doc_id", "DOC"),
+                "category": meta.get("category", ""),
+            })
+
+        from enterprise_agent.retrieval.reranker import rerank_documents
+        reranked = rerank_documents(query=query, documents=doc_candidates, top_n=5)
+
         doc_payloads = []
         references = []
-        for d in docs:
-            doc_id = d.metadata.get("doc_id", "DOC")
-            category = d.metadata.get("category", "")
-            references.append(f"{doc_id} [{category}]")
-            doc_payloads.append({
-                "content": d.page_content,
-                "metadata": d.metadata,
-            })
+        for r in reranked:
+            doc_id = r.get("doc_id", "DOC")
+            cat = r.get("category", "")
+            references.append(f"{doc_id} [{cat}]")
+            doc_payload = {
+                "content": r.get("text", ""),
+                "metadata": r.get("metadata", {}),
+            }
+            if "rerank_score" in r:
+                doc_payload["rerank_score"] = r["rerank_score"]
+            doc_payloads.append(doc_payload)
 
         payload: dict[str, Any] = {
             "query": query,
