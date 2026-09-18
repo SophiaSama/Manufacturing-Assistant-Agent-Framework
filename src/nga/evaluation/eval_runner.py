@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import HumanMessage, ToolMessage
 
+from nga.evaluation.grounding import GroundingResult, evaluate_grounding
 from nga.evaluation.report import build_summary, save_report
 from nga.evaluation.scoring import ScoreResult, score_answer
 from nga.models.answer_schema import (
@@ -99,12 +100,16 @@ def run_single_eval_question(
     judge: Callable[[str, str], int] | None = None,
     cache: Any | None = None,
     cache_env: str = "eval",
+    corpus_manifest: set[str] | None = None,
 ) -> ScoreResult:
     """Execute a single evaluation question on the agent graph and score it.
 
     When `cache` is provided, the question runs inside a cache_scope with
     env=cache_env so tools resolve the cache via contextvars (eval hot mode).
     Cache metrics are snapshotted before/after and attached to the result.
+
+    When `corpus_manifest` is provided, runs deterministic grounding
+    evaluation (citation existence + retrieval provenance) on the result.
     """
     from nga.cache.context import cache_scope
 
@@ -186,6 +191,26 @@ def run_single_eval_question(
     latency_s = round(time.perf_counter() - t0, 3)
     tools_called, tool_outputs = _extract_tools_and_outputs(collected_messages)
 
+    # Run grounding evaluation if corpus manifest is available
+    grounding_result: GroundingResult | None = None
+    if corpus_manifest is not None and not error_msg:
+        try:
+            # Extract evidence references from parsed answer
+            parsed = parse_final_answer(answer_text, question_parts)
+            evidence = [
+                {"citation": e.citation, "source_type": e.source_type}
+                for e in parsed.evidence
+            ]
+            grounding_result = evaluate_grounding(
+                answer_text=answer_text,
+                evidence=evidence,
+                tool_outputs=tool_outputs,
+                corpus_manifest=corpus_manifest,
+                question_id=q_id,
+            )
+        except Exception:
+            logger.debug("Grounding evaluation failed for %s", q_id, exc_info=True)
+
     return score_answer(
         answer=answer_text,
         golden=expected_answer,
@@ -201,6 +226,7 @@ def run_single_eval_question(
         error=error_msg,
         cache_stats=cache_stats,
         tier=tier,
+        grounding=grounding_result,
     )
 
 
@@ -214,31 +240,47 @@ def run_evaluation_suite(
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     cache_mode: str = "cold",
     eval_cache_db_path: str | None = None,
+    corpus_base_dir: str | None = None,
 ) -> tuple[dict[str, Any], list[ScoreResult], Path, Path]:
     """Run full evaluation suite, stream progress, compute summary, and save reports.
 
     cache_mode: "cold" (default, cache bypassed) or "hot" (uses eval cache
     DB, warm across questions — measures realistic repeated-query behavior).
+
+    corpus_base_dir: when provided, builds a corpus manifest once and runs
+    deterministic grounding evaluation (citation existence + retrieval
+    provenance) on every question.
     """
     from nga.cache import NgaCache
+    from nga.evaluation.grounding import build_corpus_manifest
 
     cache: NgaCache | None = None
     if cache_mode == "hot" and eval_cache_db_path:
         cache = NgaCache(eval_cache_db_path, env="eval")
         cache.reset_metrics()
 
+    # Build corpus manifest once for grounding evaluation
+    corpus_manifest: set[str] | None = None
+    if corpus_base_dir:
+        try:
+            corpus_manifest = build_corpus_manifest(Path(corpus_base_dir))
+            logger.info("Corpus manifest built: %d doc_ids", len(corpus_manifest))
+        except Exception:
+            logger.warning("Failed to build corpus manifest; grounding checks disabled", exc_info=True)
+
     label = run_label or f"eval_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     total = len(questions)
     results: list[ScoreResult] = []
 
     logger.info(
-        "Starting evaluation suite '%s' with %d questions (cache_mode=%s)",
-        label, total, cache_mode,
+        "Starting evaluation suite '%s' with %d questions (cache_mode=%s, grounding=%s)",
+        label, total, cache_mode, "enabled" if corpus_manifest else "disabled",
     )
 
     for idx, q in enumerate(questions, start=1):
         result = run_single_eval_question(
-            agent_graph, q, role=role, judge=judge, cache=cache, cache_env="eval"
+            agent_graph, q, role=role, judge=judge, cache=cache, cache_env="eval",
+            corpus_manifest=corpus_manifest,
         )
         results.append(result)
 
