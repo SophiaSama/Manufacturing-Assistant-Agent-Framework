@@ -150,12 +150,12 @@ Monitors graph extraction quality at ingestion time against the curated `eval-gr
 * **Entity Alignment Success Rate**: Verifies whether synonyms and alternative tool codes (e.g. `TF-6000` $\equiv$ `TQ-6018`, `AU-2025` $\equiv$ `Aurora`) correctly converge to the same global node ID. Target: $\ge 95\%$.
 * **Knowledge Coverage Rate**: Audits whether core numerical facts, cure times, and torque specs in raw SOPs exist and are reachable in the graph. Target: $\ge 90\%$.
 
-### 2. 🪜 Dashboard 2: The 4-Tier Stepped Evaluation Test Suite (阶梯式评测集)
+### 2. 🪜 Dashboard 2: The 4-Tier Stepped Evaluation Test Suite
 Stratifies the 85 evaluation questions into 4 difficulty levels to isolate exact reasoning bottlenecks:
-* **Level 1 — Single-Hop Fact Questions (单跳事实题)**: Tests baseline dense vector retrieval (Target: $\ge 95\%$, $< 2.5\text{s}$).
-* **Level 2 — Two-Hop Explicit Relation Questions (两跳显式关系题)**: Tests direct graph connectivity and 1-step edge traversal (Target: $\ge 90\%$, $< 4.5\text{s}$).
-* **Level 3 — Three-Hop Cross-Document Complex Reasoning (三跳跨文档复杂推理题)**: Tests dual-path hybrid retrieval (Vector + Subgraph BFS) across $\ge 2$ documents (Target: $\ge 82\%$, $< 8.0\text{s}$).
-* **Level 4 — Multi-Domain Comprehensive Challenge Questions (跨多条业务线的综合难题)**: Tests long-chain reasoning combining Text-to-SQL + SOP document search + Class A safety recall + RBAC boundaries + adversarial anti-hallucination probes (Target: $\ge 75\%$, $< 15.0\text{s}$).
+* **Level 1 — Single-Hop Fact Questions**: Tests baseline dense vector retrieval (Target: $\ge 95\%$, $< 2.5\text{s}$).
+* **Level 2 — Two-Hop Explicit Relation Questions**: Tests direct graph connectivity and 1-step edge traversal (Target: $\ge 90\%$, $< 4.5\text{s}$).
+* **Level 3 — Three-Hop Cross-Document Complex Reasoning**: Tests dual-path hybrid retrieval (Vector + Subgraph BFS) across $\ge 2$ documents (Target: $\ge 82\%$, $< 8.0\text{s}$).
+* **Level 4 — Multi-Domain Comprehensive Challenge Questions**: Tests long-chain reasoning combining Text-to-SQL + SOP document search + Class A safety recall + RBAC boundaries + adversarial anti-hallucination probes (Target: $\ge 75\%$, $< 15.0\text{s}$).
 * **Degradation Slope**: Tracks performance decay across hops: $\text{Slope} = \frac{\text{PassRate}(L1) - \text{PassRate}(L4)}{3}$ (Target: $\le 0.08$/tier).
 
 ### 3. ⚖️ Dashboard 3: A/B Testing & Hard Release Criteria Safeguards

@@ -1,0 +1,107 @@
+domain:
+  id: "banking_aml"
+  name: "Global Horizon Bank — AML & Financial Crime Assistant"
+  description: "Decision support assistant for suspicious activity detection, sanctions screening, and AML compliance."
+  version: "1.0.0"
+
+rbac:
+  default_role: "teller"
+  roles:
+    teller: 1
+    compliance_analyst: 2
+    risk_manager: 3
+    chief_risk_officer: 4
+  role_prompts:
+    chief_risk_officer: >
+      You are the Chief Risk Officer assistant for Global Horizon Bank.
+      You have full authority to authorize asset freezes, review confidential SAR (Suspicious Activity Report)
+      filings, and approve disclosures to FinCEN and regulatory bodies.
+      Always cite the specific banking policy ID, transaction IDs, and regulatory framework (e.g. BSA/AML, OFAC).
+    risk_manager: >
+      You are a Senior Risk Manager assistant for Global Horizon Bank.
+      You evaluate high-risk customer profiles, wire transfers exceeding $1,000,000, and escalation cases.
+      Perform detailed transaction tracing and cite all account records and policies.
+    compliance_analyst: >
+      You are an AML Compliance Analyst assistant.
+      You investigate transaction alerts, screen accounts against sanctions lists, and evaluate red flags.
+      Do not authorize final asset freezes — prepare investigation memos and escalate when necessary.
+    teller: >
+      You are a Branch Teller assistant for Global Horizon Bank.
+      Assist with standard customer inquiries and transaction limit lookups.
+      If structuring or suspicious cash behavior is observed, note the red flag and advise escalation.
+  path_level_rules:
+    - pattern: "standard-procedures"
+      min_rank: 1
+    - pattern: "aml-guidelines"
+      min_rank: 2
+    - pattern: "investigation-cases"
+      min_rank: 3
+    - pattern: "regulatory-sar"
+      min_rank: 4
+
+database:
+  dialect: "sqlite"
+  connection_uri: "domains/banking/data/banking.db"
+  tool_name: "query_banking_database"
+  tool_description: >
+    Run a read-only SELECT query against the core banking database.
+    Available tables: customers, accounts, transactions, sanctions_list, audit_alerts.
+  allowed_tables:
+    - customers
+    - accounts
+    - transactions
+    - sanctions_list
+    - audit_alerts
+
+documents:
+  tool_name: "search_compliance_documents"
+  tool_description: >
+    Search bank compliance policies, AML manuals, KYC risk matrix, and sanctions data.
+    Categories: POL (General Policy), AML (Anti-Money Laundering), SAN (Sanctions), KYC (Customer Due Diligence).
+  supported_extensions:
+    - ".md"
+    - ".json"
+    - ".csv"
+    - ".txt"
+  categories:
+    - code: "POL"
+      name: "Banking Policies"
+      folder_patterns: ["standard-procedures", "policies"]
+    - code: "AML"
+      name: "Anti-Money Laundering Manuals"
+      folder_patterns: ["aml-guidelines"]
+    - code: "SAN"
+      name: "Sanctions Watchlists"
+      folder_patterns: ["sanctions"]
+    - code: "KYC"
+      name: "Customer Due Diligence"
+      folder_patterns: ["kyc"]
+  id_patterns:
+    - "(POL-\\d+)"
+    - "(AML-\\d+)"
+    - "(SAN-\\d+)"
+    - "(KYC-\\d+)"
+
+governance:
+  hitl_action_verbs:
+    - "freeze account"
+    - "block wire"
+    - "file sar"
+    - "freeze assets"
+    - "notify fincen"
+    - "close account"
+    - "seize"
+    - "restrict transfer"
+  critical_terms:
+    - "ofac match"
+    - "sanctioned entity"
+    - "terrorist financing"
+    - "structuring"
+    - "money laundering"
+    - "pep violation"
+  escalation_levels:
+    - "Tier 1 — Branch Review"
+    - "Tier 2 — AML Investigation"
+    - "Tier 3 — Executive Committee"
+    - "Tier 4 — Regulatory Escalation"
+  justification_required: true

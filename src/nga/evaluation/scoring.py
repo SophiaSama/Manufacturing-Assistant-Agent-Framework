@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nga.evaluation.grounding import GroundingResult
 
 PASS_THRESHOLD = 0.70
 
@@ -23,6 +27,7 @@ class ScoreResult:
     error: str | None = None
     cache_stats: dict | None = None  # per-layer hit/miss/ms when cache hot
     tier: str = "L2"
+    grounding: GroundingResult | None = None
 
 
 def _parsed_tool_payloads(tool_outputs: list[str] | None) -> list[dict]:
@@ -74,6 +79,7 @@ def deterministic_checks(
     source_docs: list[str],
     tool_outputs: list[str] | None = None,
     requires_sql: bool = False,
+    grounding: GroundingResult | None = None,
 ) -> dict[str, bool]:
     lowered = answer.lower()
     checks: dict[str, bool] = {}
@@ -99,6 +105,11 @@ def deterministic_checks(
     # 4. Answer is not empty
     checks["non_empty_answer"] = len(answer.strip()) > 20
 
+    # 5. Grounding validity (when grounding evaluation was performed)
+    if grounding is not None:
+        checks["grounding_valid"] = grounding.grounded
+        checks["no_fabricated_citations"] = len(grounding.fabricated_citations) == 0
+
     return checks
 
 
@@ -117,10 +128,11 @@ def score_answer(
     error: str | None = None,
     cache_stats: dict | None = None,
     tier: str = "L2",
+    grounding: GroundingResult | None = None,
 ) -> ScoreResult:
     checks = deterministic_checks(
         answer, expected_tools, tools_called, source_docs,
-        tool_outputs, requires_sql,
+        tool_outputs, requires_sql, grounding=grounding,
     )
     deterministic_score = sum(1 for v in checks.values() if v) / max(len(checks), 1)
 
@@ -148,4 +160,5 @@ def score_answer(
         error=error,
         cache_stats=cache_stats,
         tier=tier,
+        grounding=grounding,
     )
