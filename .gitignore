@@ -35,3 +35,7 @@ tests/labs/
 #Cache
 .pytest_cache/
 .ruff_cache/
+
+# SDK
+node_modules/
+.env.local
