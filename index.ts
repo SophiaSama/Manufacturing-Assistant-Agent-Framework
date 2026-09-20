@@ -6,7 +6,7 @@ if (existsSync('.env.local')) {
 }
 
 const { text } = await generateText({
-  model: 'openai/gpt-5.5',
+  model: 'openai/gpt-4o-mini',
   prompt: 'Invent a new holiday and describe its traditions.',
 });
 
