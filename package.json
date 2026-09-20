@@ -1,0 +1,29 @@
+{
+  "name": "manufacturing_agent",
+  "version": "1.0.0",
+  "description": "> **⚠️ Disclaimer — Synthetic Evaluation Corpus**:   > All data in this repository — including **Apex Automotive**, the **Northgate Assembly Plant (NGA)**, vehicle models (*Aurora AU-2025*, *Solstice SO-2025*), Standard Operating Procedures (SOPs), machine specifications, fault codes, non-conformance records, torque logs, and SQLite database tables (`nga.db`) — is **entirely synthetic and fictional**. It has been generated strictly for research, testing, and AI decision-support benchmark evaluation purposes.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SophiaSama/Manufacturing-Assistant-Agent-Framework.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/SophiaSama/Manufacturing-Assistant-Agent-Framework/issues"
+  },
+  "homepage": "https://github.com/SophiaSama/Manufacturing-Assistant-Agent-Framework#readme",
+  "dependencies": {
+    "ai": "^7.0.107"
+  }
+}
