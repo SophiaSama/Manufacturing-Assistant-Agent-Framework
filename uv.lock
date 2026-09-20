@@ -1104,6 +1104,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "python-louvain" },
     { name = "sqlglot" },
+    { name = "typesafe-ai" },
     { name = "typesafe-sdk" },
 ]
 
@@ -1135,6 +1136,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = "==1.0.1" },
     { name = "python-louvain", specifier = ">=0.16" },
     { name = "sqlglot", specifier = ">=25,<26" },
+    { name = "typesafe-ai", specifier = ">=0.1.0" },
     { name = "typesafe-sdk", specifier = ">=0.7.0" },
 ]
 
@@ -1992,6 +1994,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ae/40/4a3db7990d1f62a53182aa96eaef57aeb2886a27f90a195bc66713565d31/typer-0.27.1.tar.gz", hash = "sha256:a79bef8469a79c45498e7b814ecf8d603cc7644e9acbd9e19cac0334240b18df", size = 203994, upload-time = "2026-08-03T14:41:03.438Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/43/89/9518bc0c3929bee36b3a4a8e3daddd6e03f92f9961c66d4983b837160543/typer-0.27.1-py3-none-any.whl", hash = "sha256:53150287edd11baeb4e4722c8e394fcdf8181c0ae89485cba8d25c778d5edd56", size = 122874, upload-time = "2026-08-03T14:41:04.391Z" },
+]
+
+[[package]]
+name = "typesafe-ai"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typesafe-sdk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ab/e4/d7066cfce493420eb6ff653341599f64e53b0a653abc60d34d8e8598897c/typesafe_ai-0.1.0.tar.gz", hash = "sha256:b7e79fed3ca8d1d76c7c1afbed48c166debd14456a616a8e0593301ebdcf1136", size = 1563, upload-time = "2026-09-17T03:35:17.941Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/37/c46be7e49c3cee840da7c89f7b58735271b10461b016c539ed9d39cb1b60/typesafe_ai-0.1.0-py3-none-any.whl", hash = "sha256:422a2cafa98501622054add1dc7835be61fbf06410921cc6d00557e36a67a18b", size = 2002, upload-time = "2026-09-17T03:35:16.824Z" },
 ]
 
 [[package]]

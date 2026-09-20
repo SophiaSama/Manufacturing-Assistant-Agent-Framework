@@ -23,6 +23,7 @@ dependencies = [
     "pytest-html>=4.1.1",
     "litellm>=1.50.0",
     "typesafe-sdk>=0.7.0",
+    "typesafe-ai>=0.1.0",
 ]
 
 [dependency-groups]
