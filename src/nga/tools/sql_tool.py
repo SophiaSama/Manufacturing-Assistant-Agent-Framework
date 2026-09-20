@@ -9,14 +9,13 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-import sqlglot
 from sqlglot import exp
 
 from enterprise_agent.database.engine import (
-    SqlValidationError,
     SqliteAdapter,
+)
+from enterprise_agent.database.engine import (
     validate_schema_references as _validate_schema_references_generic,
-    validate_select_only,
 )
 
 

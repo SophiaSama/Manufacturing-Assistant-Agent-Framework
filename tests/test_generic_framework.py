@@ -2,12 +2,13 @@
 
 import json
 from pathlib import Path
+
 import pytest
 
 from enterprise_agent.config.domain_config import DomainConfig
 from enterprise_agent.database.engine import (
-    SqlValidationError,
     SqliteAdapter,
+    SqlValidationError,
     validate_select_only,
 )
 from enterprise_agent.documents.loader import (
@@ -19,13 +20,10 @@ from enterprise_agent.documents.loader import (
 )
 from enterprise_agent.hitl.policy_gate import (
     evaluate_governance,
-    extract_recommendation,
 )
 from enterprise_agent.models.answer_schema import (
-    EvidenceReference,
     FinalAnswer,
     GovernanceAlert,
-    parse_final_answer,
     render_final_answer,
 )
 

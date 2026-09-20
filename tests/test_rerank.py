@@ -1,11 +1,10 @@
 """Unit tests for LiteLLM cross-encoder reranking with Hugging Face."""
 
-import os
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from enterprise_agent.retrieval.reranker import (
-    DEFAULT_RERANK_MODEL,
     get_hf_token,
     get_rerank_model,
     is_rerank_enabled,

@@ -5,7 +5,9 @@ Delegates core algorithms to enterprise_agent.
 
 from __future__ import annotations
 
-from enterprise_agent.graph.nodes import extract_question_parts as _extract_question_parts_generic
+from enterprise_agent.graph.nodes import (
+    extract_question_parts as _extract_question_parts_generic,
+)
 from enterprise_agent.hitl.policy_gate import (
     extract_recommendation as _extract_recommendation_generic,
 )
