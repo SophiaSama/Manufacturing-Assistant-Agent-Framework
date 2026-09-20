@@ -16,6 +16,7 @@ def test_token_and_model_resolution(monkeypatch):
     """Test resolution of HF_TOKEN, HUGGINGFACE_API_KEY, and RERANK_MODEL."""
     monkeypatch.delenv("HF_TOKEN", raising=False)
     monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
+    monkeypatch.delenv("RERANK_ENABLED", raising=False)
     assert get_hf_token() is None
     assert is_rerank_enabled() is False
 
@@ -44,6 +45,7 @@ def test_rerank_without_token(monkeypatch):
     """Test graceful fallback when no HF token is configured."""
     monkeypatch.delenv("HF_TOKEN", raising=False)
     monkeypatch.delenv("HUGGINGFACE_API_KEY", raising=False)
+    monkeypatch.delenv("RERANK_ENABLED", raising=False)
 
     docs = [
         {"text": "passage 1", "doc_id": "D1"},

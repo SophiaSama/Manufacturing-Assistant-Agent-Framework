@@ -13,10 +13,20 @@ from sqlglot import exp
 
 from enterprise_agent.database.engine import (
     SqliteAdapter,
+    SqlValidationError,
+    validate_select_only,
 )
 from enterprise_agent.database.engine import (
     validate_schema_references as _validate_schema_references_generic,
 )
+
+__all__ = [
+    "SqlValidationError",
+    "SqliteAdapter",
+    "describe_schema",
+    "run_query",
+    "validate_select_only",
+]
 
 
 def _connect_read_only(db_path: str) -> sqlite3.Connection:
