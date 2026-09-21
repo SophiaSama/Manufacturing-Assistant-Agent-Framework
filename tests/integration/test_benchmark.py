@@ -79,30 +79,15 @@ def agent_graph(settings, tmp_path_factory):
     return build_orchestrator(settings, checkpointer, sql_tool, retrieval_tool)
 
 
-# ── LLM judge ─────────────────────────────────────────────────────────────────
+# ── Judge Fixture ─────────────────────────────────────────────────────────────
 
-def make_judge(settings: Settings):
-    """Build an LLM-as-judge that returns 0–5 score."""
-    llm = make_chat_model(settings)
-
-    def judge(candidate: str, golden: str) -> int:
-        prompt = (
-            "You are an expert manufacturing quality evaluator.\n"
-            "Score the candidate answer vs the golden answer on:\n"
-            "  - Correctness (does it state the right facts?)\n"
-            "  - Groundedness (no hallucinated numbers or doc references?)\n"
-            "  - Completeness (does it cover all key points?)\n\n"
-            f"Golden: {golden}\n\nCandidate: {candidate}\n\n"
-            "Return ONLY an integer 0–5 (5=perfect). No explanation."
-        )
-        try:
-            response = llm.invoke([HumanMessage(content=prompt)])
-            content = response.content if hasattr(response, "content") else str(response)
-            return max(0, min(5, int(content.strip().split()[0])))
-        except Exception:
-            return 0
-
-    return judge
+@pytest.fixture(scope="session")
+def active_judge(use_judge, judge_backend, settings: Settings):
+    """Build the active judge based on --judge and --judge-backend flags."""
+    if not use_judge:
+        return None
+    from nga.evaluation.judge import get_judge
+    return get_judge(backend=judge_backend)
 
 
 # ── Run one question ──────────────────────────────────────────────────────────
@@ -192,7 +177,7 @@ def _save_report_on_finish(settings):
     ALL_QUESTIONS,
     ids=[q["id"] for q in ALL_QUESTIONS],
 )
-def test_question(question_data, agent_graph, settings):
+def test_question(question_data, agent_graph, settings, active_judge):
     qid = question_data["id"]
     category = question_data.get("category", "unknown")
     question = question_data["question"]
@@ -233,7 +218,7 @@ def test_question(question_data, agent_graph, settings):
         category=category,
         tool_outputs=tool_outputs,
         requires_sql=requires_sql,
-        judge=None,   # set to make_judge(settings) to enable LLM judge
+        judge=active_judge,
         latency_s=latency,
         error=error,
     )

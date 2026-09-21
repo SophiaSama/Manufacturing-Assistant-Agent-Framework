@@ -12,7 +12,7 @@ dependencies = [
     "langchain-openai==0.2.9",
     "langgraph==0.2.53",
     "langgraph-checkpoint-sqlite==2.0.1",
-    "langsmith==0.1.147",
+    "langsmith>=0.1.147",
     "networkx>=3.6.1",
     "posthog<6",
     "python-dotenv==1.0.1",
@@ -24,6 +24,7 @@ dependencies = [
     "litellm>=1.50.0",
     "typesafe-sdk>=0.7.0",
     "typesafe-ai>=0.1.0",
+    "langchain-typesafe>=0.0.1a3",
 ]
 
 [dependency-groups]
@@ -51,3 +52,9 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv]
+override-dependencies = [
+    "langchain-core==1.6.3",
+    "langsmith==0.13.0"
+]
