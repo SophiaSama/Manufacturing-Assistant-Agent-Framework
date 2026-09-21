@@ -32,7 +32,7 @@ from nga.models.answer_schema import (
     parse_final_answer,
     render_final_answer,
 )
-from nga.providers.factory import make_chat_model, make_embeddings
+from nga.providers.factory import make_embeddings
 from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
 

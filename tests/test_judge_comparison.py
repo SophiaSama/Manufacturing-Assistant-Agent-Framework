@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
-from dotenv import load_dotenv
-load_dotenv()
 
 import pytest
-from nga.evaluation.judge import evaluate_with_jev, make_jev_judge, make_llm_judge
+from dotenv import load_dotenv
+
+from nga.evaluation.judge import evaluate_with_jev, make_jev_judge
+
+load_dotenv()
 
 
 @pytest.mark.skipif(not os.getenv("TYPESAFE_API_KEY"), reason="Requires TYPESAFE_API_KEY")

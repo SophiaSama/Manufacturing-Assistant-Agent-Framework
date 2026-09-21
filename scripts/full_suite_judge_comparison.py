@@ -2,22 +2,20 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
+import logging
 import re
 import time
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from nga.evaluation.ci_tracker import record_eval_run
 from nga.evaluation.judge import evaluate_with_jev, make_jev_judge, make_llm_judge
+
+load_dotenv()
 
 # Attach shared file logger for real-time visibility in UI System Logs
 _log_file = Path(__file__).resolve().parents[1] / "data" / "system.log"
@@ -246,7 +244,7 @@ def main():
     print(f"Average Latency - LLM Judge:       {avg_llm_lat:.1f} ms")
     print(f"Average Latency - Jev Judge:       {avg_jev_lat:.1f} ms")
     print(f"Speedup Factor:                    {avg_llm_lat / avg_jev_lat:.2f}x faster with Jev")
-    print(f"Output Token Billing with Jev:     $0.00 (non-generative)")
+    print("Output Token Billing with Jev:     $0.00 (non-generative)")
 
     print("\nBreakdown By Category:")
     print(f"{'Category':<22} | {'Count':<6} | {'Agreement(±1)':<15} | {'LLM Lat':<10} | {'Jev Lat'}")

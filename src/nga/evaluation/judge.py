@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +120,7 @@ def make_llm_judge(settings: Any | None = None) -> Callable[[str, str], int]:
         settings = Settings.from_env()
 
     from langchain_core.messages import HumanMessage
+
     from nga.providers.factory import make_chat_model
 
     llm = make_chat_model(settings)

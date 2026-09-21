@@ -232,7 +232,11 @@ def test_list_evaluation_reports_ignores_history_and_non_dict(caplog):
     """Ensure list_evaluation_reports safely ignores history.json and non-dict JSON files without warnings."""
     import json
     import logging
-    from nga.evaluation.eval_runner import get_evaluation_report, list_evaluation_reports
+
+    from nga.evaluation.eval_runner import (
+        get_evaluation_report,
+        list_evaluation_reports,
+    )
 
     with tempfile.TemporaryDirectory() as tmpdir:
         reports_dir = Path(tmpdir)
