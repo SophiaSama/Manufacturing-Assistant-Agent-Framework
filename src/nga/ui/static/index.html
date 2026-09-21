@@ -49,6 +49,9 @@
         <button class="nav-tab" data-tab="multimodel">
           <span class="tab-icon">🤖</span> Multi-Model Arena
         </button>
+        <button class="nav-tab" data-tab="judge">
+          <span class="tab-icon">⚖️</span> Jev Judge
+        </button>
         <button class="nav-tab" data-tab="trends">
           <span class="tab-icon">📈</span> CI Trends
         </button>
@@ -186,6 +189,7 @@
                 <option value="ERROR">ERROR only</option>
               </select>
               <button class="btn btn-sm btn-outline" id="btn-refresh-logs">🔄 Refresh</button>
+              <button class="btn btn-sm btn-outline" id="btn-toggle-auto-logs">Auto-Refresh: OFF</button>
               <button class="btn btn-sm btn-outline" id="btn-clear-logs-view">Clear View</button>
             </div>
           </div>
@@ -196,6 +200,8 @@
             </div>
           </div>
         </div>
+      </section>
+
       <!-- TAB: GRAPH QUALITY (DASHBOARD 1) -->
       <section class="tab-pane" id="pane-graph">
         <div class="pane-inner">
@@ -669,6 +675,60 @@
         </div>
       </section>
 
+      <!-- TAB: JEV JUDGE BENCHMARK (TYPE SAFE VS LLM) -->
+      <section class="tab-pane" id="pane-judge">
+        <div class="pane-inner">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">⚖️ TypeSafe Jev Judge vs. Classical LLM-as-a-Judge</h2>
+              <p class="pane-subtitle">Direct evaluation comparison across 85 benchmark questions evaluating judgment latency, score agreement, and hallucination catch rate.</p>
+            </div>
+            <div class="pane-actions">
+              <button class="btn btn-outline" id="btn-refresh-judge-eval">🔄 Refresh Benchmark</button>
+            </div>
+          </div>
+
+          <!-- Top Metric Cards -->
+          <div class="metric-cards-row mb-4" id="judge-metric-cards">
+            <!-- Rendered via JS -->
+          </div>
+
+          <!-- Category Performance Table -->
+          <div class="card mb-4">
+            <h3 class="card-title">Category Agreement & Latency Comparison</h3>
+            <div class="table-responsive">
+              <table class="data-table" id="judge-category-table">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Questions</th>
+                    <th>Score Agreement (±1 Level)</th>
+                    <th>Classical LLM Latency</th>
+                    <th>TypeSafe Jev Latency</th>
+                    <th>Speed / Latency Delta</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Markdown Reports Library & Content Viewer -->
+          <div class="card">
+            <div class="card-header-flex">
+              <h3 class="card-title">📄 Evaluation Reports Library</h3>
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <select id="select-md-report" class="select-sm" style="min-width: 260px;"></select>
+                <button class="btn btn-sm btn-outline" id="btn-load-md-report">View Report</button>
+              </div>
+            </div>
+            <div class="report-content-box mt-3" id="md-report-viewer" style="background: var(--bg-input, #0f172a); border-radius: var(--radius-sm, 6px); padding: 1rem; border: 1px solid var(--border-color, #334155); max-height: 480px; overflow-y: auto;">
+              <pre class="report-pre-content" id="md-report-text" style="font-family: var(--font-mono, monospace); font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap; color: var(--text-color, #f1f5f9); margin: 0;">Select a report above to view its contents.</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- TAB 7: RBAC ROLES & PERMISSIONS -->
       <section class="tab-pane" id="pane-roles">
         <div class="pane-inner">
@@ -750,6 +810,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

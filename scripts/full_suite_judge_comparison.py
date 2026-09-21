@@ -7,6 +7,8 @@ import json
 import os
 import re
 import time
+import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -14,7 +16,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from nga.evaluation.ci_tracker import record_eval_run
 from nga.evaluation.judge import evaluate_with_jev, make_jev_judge, make_llm_judge
+
+# Attach shared file logger for real-time visibility in UI System Logs
+_log_file = Path(__file__).resolve().parents[1] / "data" / "system.log"
+_log_file.parent.mkdir(parents=True, exist_ok=True)
+_fh = logging.FileHandler(_log_file, encoding="utf-8")
+_fh.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+logger = logging.getLogger("nga.judge_comparison")
+logger.addHandler(_fh)
+logger.setLevel(logging.INFO)
 
 
 def perturb_answer(expected: str, category: str) -> str:
@@ -195,6 +207,82 @@ def main():
 
     print(f"\nFull report saved to: {report_path}")
 
+    # Save JSON report for A/B studio and CI trends tracking
+    json_path = report_path.with_suffix(".json")
+    json_payload = {
+        "run_label": "full_suite_judge_comparison",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "cache_mode": "cold",
+        "summary": {
+            "total": n,
+            "passed": positive_agreements,
+            "pass_rate": round(positive_agreements / max(n, 1), 3),
+            "avg_score": round(sum(jev_scores) / max(n, 1) / 5.0, 3),
+            "avg_latency_s": round(avg_jev_lat / 1000.0, 3),
+            "by_category": [
+                {
+                    "category": cat,
+                    "total": d["count"],
+                    "passed": sum(1 for diff in d["diffs"] if diff <= 1),
+                    "pass_rate": round(sum(1 for diff in d["diffs"] if diff <= 1) / max(d["count"], 1), 3),
+                    "avg_score": round(sum(d["diffs"]) / max(d["count"], 1), 3),
+                    "avg_latency_s": round(sum(d["jev_lat"]) / max(d["count"], 1) / 1000.0, 3),
+                }
+                for cat, d in sorted(categories.items())
+            ],
+        },
+        "judge_comparison": {
+            "total_questions": n,
+            "agreement_pct": round(agreement_pct, 1),
+            "llm_hallucination_catch_rate": round(llm_neg_rate, 1),
+            "jev_hallucination_catch_rate": round(jev_neg_rate, 1),
+            "llm_avg_latency_ms": round(avg_llm_lat, 1),
+            "jev_avg_latency_ms": round(avg_jev_lat, 1),
+            "categories": {
+                cat: {
+                    "count": d["count"],
+                    "agreement_pct": round((sum(1 for diff in d["diffs"] if diff <= 1) / d["count"]) * 100, 1),
+                    "llm_lat_ms": round(sum(d["llm_lat"]) / d["count"], 1),
+                    "jev_lat_ms": round(sum(d["jev_lat"]) / d["count"], 1),
+                }
+                for cat, d in sorted(categories.items())
+            },
+        },
+        "results": [
+            {
+                "id": r["id"],
+                "category": r["category"],
+                "passed": abs(r["llm_score"] - r["jev_score"]) <= 1,
+                "overall_score": round(r["jev_score"] / 5.0, 2),
+                "llm_score": r["llm_score"],
+                "jev_score": r["jev_score"],
+                "latency_s": round(r["jev_lat"] / 1000.0, 3),
+                "checks": {
+                    "judge_agreement": abs(r["llm_score"] - r["jev_score"]) <= 1,
+                    "jev_faithful": r["jev_faithful"],
+                },
+            }
+            for r in report_rows
+        ],
+    }
+
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(json_payload, f, indent=2)
+    print(f"JSON benchmark report saved to: {json_path}")
+
+    # Record to historical ledger for CI trend tracking
+    try:
+        record_eval_run(json_payload)
+        print("Successfully recorded run to CI trends ledger (history.json).")
+    except Exception as exc:
+        print(f"Warning: Could not record to history ledger: {exc}")
+
+    logger.info(
+        "Full-suite judge comparison completed: Total=%d, Agreement=%.1f%%, HallucinationCatch(Jev)=%.1f%%, AvgJevLat=%.1fms",
+        n, agreement_pct, jev_neg_rate, avg_jev_lat,
+    )
+
 
 if __name__ == "__main__":
     main()
+
