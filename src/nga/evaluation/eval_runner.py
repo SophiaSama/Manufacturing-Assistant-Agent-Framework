@@ -356,9 +356,13 @@ def list_evaluation_reports(reports_dir: str = "reports/eval") -> list[dict[str,
 
     reports = []
     for json_file in sorted(out_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if json_file.name == "history.json":
+            continue
         try:
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                continue
             summary = data.get("summary", {})
             reports.append({
                 "run_label": data.get("run_label") or json_file.stem,
@@ -385,7 +389,8 @@ def get_evaluation_report(run_label: str, reports_dir: str = "reports/eval") -> 
         return None
     try:
         with open(json_path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return data if isinstance(data, dict) else None
     except Exception as exc:
         logger.warning("Error reading report %s: %s", json_path, exc)
         return None
