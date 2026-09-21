@@ -16,6 +16,11 @@ env/
 
 # Environment / secrets
 .env
+.env.local
+.env*.local
+
+# Node
+node_modules/
 
 # IDE
 .DS_Store
@@ -30,7 +35,12 @@ reports/
 # ground-truth.md is intentionally NOT committed to prevent leakage
 TEST_REVIEW_SUMMARY.md
 docs/
+tests/labs/
 
 #Cache
 .pytest_cache/
 .ruff_cache/
+
+# SDK
+node_modules/
+.env.local

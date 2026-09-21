@@ -1,8 +1,16 @@
-"""Node helper functions for the NGA Manufacturing Assistant orchestrator."""
+"""Node helper functions for the NGA Manufacturing Assistant orchestrator.
+
+Delegates core algorithms to enterprise_agent.
+"""
 
 from __future__ import annotations
 
-import re
+from enterprise_agent.graph.nodes import (
+    extract_question_parts as _extract_question_parts_generic,
+)
+from enterprise_agent.hitl.policy_gate import (
+    extract_recommendation as _extract_recommendation_generic,
+)
 
 # High-consequence action verbs that trigger HITL approval
 _HITL_ACTION_VERBS = [
@@ -11,66 +19,15 @@ _HITL_ACTION_VERBS = [
     "level 4", "level 3", "open nc", "8d", "stop station",
 ]
 
-_QUESTION_STARTERS = (
-    "what", "which", "whether", "do", "does", "is", "are", "should",
-    "can", "will", "how", "why", "when", "where", "who",
-)
-_IMPERATIVE_STARTERS = (
-    "identify", "list", "confirm", "provide", "determine",
-    "explain", "describe", "walk through", "evaluate", "compute",
-)
-
 
 def extract_question_parts(question: str) -> list[str]:
     """Split a compound user question into explicit sub-questions."""
-    normalized = " ".join(question.split())
-    sentences = re.split(r"(?<=[.!?])\s+", normalized)
-    question_parts: list[str] = []
-    starters_pattern = "|".join(_QUESTION_STARTERS + _IMPERATIVE_STARTERS)
-
-    for sentence in sentences:
-        stripped = sentence.strip().rstrip(".?!")
-        if not stripped:
-            continue
-        if not stripped.lower().startswith(_QUESTION_STARTERS + _IMPERATIVE_STARTERS):
-            match = re.search(
-                rf"\b({starters_pattern})\b", stripped, flags=re.IGNORECASE
-            )
-            if match:
-                stripped = stripped[match.start():]
-        subparts = re.split(
-            rf",\s+(?=(?:and\s+)?(?:{starters_pattern}|the)\b)",
-            stripped,
-            flags=re.IGNORECASE,
-        )
-        for part in subparts:
-            candidate = re.sub(
-                r"^and\s+", "", part.strip(), flags=re.IGNORECASE
-            ).rstrip(".?!")
-            lowered = candidate.lower()
-            if lowered.startswith("whether "):
-                question_parts.append(f"Do {candidate[len('whether '):].strip()}?")
-                continue
-            if lowered.startswith("the "):
-                question_parts.append(f"What are {candidate}?")
-                continue
-            if lowered.startswith(_QUESTION_STARTERS + _IMPERATIVE_STARTERS):
-                question_parts.append(f"{candidate[0].upper()}{candidate[1:]}?")
-
-    if question_parts:
-        return question_parts
-    fallback = normalized.rstrip(".?!")
-    return [f"{fallback}?"] if fallback else []
+    return _extract_question_parts_generic(question)
 
 
 def extract_recommendation(answer_text: str) -> str | None:
     """Return the first sentence containing a high-consequence actionable recommendation."""
-    sentences = re.split(r"(?<=[.!?])\s+", answer_text)
-    for sentence in sentences:
-        lowered = sentence.lower()
-        if any(verb in lowered for verb in _HITL_ACTION_VERBS):
-            return sentence.strip()
-    return None
+    return _extract_recommendation_generic(answer_text, action_verbs=_HITL_ACTION_VERBS)
 
 
 def is_class_a_defect(text: str) -> bool:

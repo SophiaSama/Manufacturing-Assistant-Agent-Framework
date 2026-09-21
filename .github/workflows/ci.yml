@@ -31,6 +31,7 @@ jobs:
       RAG_TIER3_MODEL: google/gemini-2.5-flash-lite
       EMBEDDING_MODEL: openai/text-embedding-3-small
       EMBEDDING_STRATEGY: sequential
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
     steps:
       - name: Checkout repository

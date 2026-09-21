@@ -1,0 +1,169 @@
+domain:
+  id: "manufacturing_nga"
+  name: "Apex Automotive — Northgate Assembly Plant (NGA)"
+  description: "Agentic decision support for automotive assembly, maintenance, quality, and recall management."
+  version: "1.0.0"
+
+rbac:
+  default_role: "operator"
+  roles:
+    operator: 1
+    technician: 2
+    engineer: 3
+    manager: 4
+  role_prompts:
+    manager: >
+      You are the Plant Manager / Quality Director decision-support assistant for
+      Apex Automotive — Northgate Assembly Plant (NGA).
+      You have full access to all documentation, production data, and regulatory guidance.
+      You can evaluate recall trigger criteria (QCR-501 C1–C5), authorize stop-ship decisions,
+      and review field actions. NRSA regulatory timelines (5 business days for safety defects)
+      must always be highlighted.
+      Always cite the specific document ID and section for every decision.
+      For Class A defects, always state whether Level 4 escalation and joint PM/QD approval are required.
+    engineer: >
+      You are a Process / Quality Engineer assistant for Northgate Assembly Plant.
+      You have access to all SOPs, machine specs, failure analysis procedures (FAP-401),
+      supplier quality data, and training records.
+      You can perform root-cause analysis (8D / 5-Why / Ishikawa), evaluate NC records,
+      and assess defect classification (Class A/B/C).
+      Cite every claim with document ID, section, and relevant data from the NGA database.
+      Do not speculate beyond the provided context.
+    technician: >
+      You are a Maintenance Technician assistant for Northgate Assembly Plant.
+      Answer only with step-by-step maintenance and troubleshooting procedures.
+      You have access to technician SOPs (SOP-TEC-*) and machine specifications (TEC-*).
+      Do not perform root-cause analysis or evaluate recall criteria — escalate to engineering when needed.
+      Cite document IDs for every procedure step.
+    operator: >
+      You are an Assembly Operator assistant for Northgate Assembly Plant.
+      Answer only with step-by-step assembly procedures from operator SOPs (SOP-OPR-*).
+      Do not discuss machine internals, root-cause analysis, or quality escalation procedures.
+      If you cannot answer from the provided SOPs, say so and advise escalation to your supervisor.
+      Always cite the SOP document ID and revision.
+  path_level_rules:
+    - pattern: "operator-sops"
+      min_rank: 1
+    - pattern: "technician-sops"
+      min_rank: 2
+    - pattern: "machine-details"
+      min_rank: 2
+    - pattern: "additional-docs/maintenance-work-orders"
+      min_rank: 2
+    - pattern: "failure-analysis"
+      min_rank: 3
+    - pattern: "additional-docs/supplier-quality"
+      min_rank: 3
+    - pattern: "additional-docs/training"
+      min_rank: 3
+    - pattern: "recall-quality"
+      min_rank: 4
+
+database:
+  dialect: "sqlite"
+  connection_uri: "database/nga.db"
+  tool_name: "query_nga_database"
+  tool_description: >
+    Run a read-only SELECT query against the NGA production database.
+    The nga.db contains 17 tables: lines, stations, machines, shifts,
+    vehicles, build_records, torque_readings, quality_checks, defects,
+    nc_records, work_orders, maintenance_logs, escalations, field_actions,
+    suppliers, parts, training_records.
+    The `sql` argument must be a single SELECT statement.
+  allowed_tables:
+    - lines
+    - stations
+    - machines
+    - shifts
+    - vehicles
+    - build_records
+    - torque_readings
+    - quality_checks
+    - defects
+    - nc_records
+    - work_orders
+    - maintenance_logs
+    - escalations
+    - field_actions
+    - suppliers
+    - parts
+    - training_records
+
+documents:
+  tool_name: "search_sop_documents"
+  tool_description: >
+    Search NGA reference documents: SOPs, machine specs, failure analysis,
+    recall criteria, work orders, supplier quality, and training records.
+    Categories: OPR, TEC, FA, QCR, WO, SQ, TR.
+  supported_extensions:
+    - ".md"
+    - ".txt"
+  categories:
+    - code: "OPR"
+      name: "Operator SOPs"
+      folder_patterns: ["operator-sops"]
+    - code: "TEC"
+      name: "Technician SOPs & Specs"
+      folder_patterns: ["technician-sops", "machine-details"]
+    - code: "FA"
+      name: "Failure Analysis"
+      folder_patterns: ["failure-analysis"]
+    - code: "QCR"
+      name: "Recall & Quality Criteria"
+      folder_patterns: ["recall-quality"]
+    - code: "WO"
+      name: "Maintenance Work Orders"
+      folder_patterns: ["maintenance-work-orders"]
+    - code: "SQ"
+      name: "Supplier Quality"
+      folder_patterns: ["supplier-quality"]
+    - code: "TR"
+      name: "Training Records"
+      folder_patterns: ["training"]
+  id_patterns:
+    - "(SOP-[A-Z]+-\\d+)"
+    - "(TEC-\\d+)"
+    - "(FAP-\\d+)"
+    - "(QCR-\\d+)"
+    - "(WO-\\d+)"
+    - "(SQA-\\d+)"
+    - "(TRN-\\d+)"
+  excluded_files:
+    - "ground-truth.md"
+    - "planted-inconsistencies.md"
+    - "database-readme.md"
+    - "example-queries.sql"
+
+governance:
+  hitl_action_verbs:
+    - "stop-ship"
+    - "stop ship"
+    - "quarantine"
+    - "recall"
+    - "rework"
+    - "scrap"
+    - "halt"
+    - "hold line"
+    - "notify nrsa"
+    - "field action"
+    - "level 4"
+    - "level 3"
+    - "open nc"
+    - "8d"
+    - "stop station"
+  critical_terms:
+    - "class a"
+    - "brake"
+    - "steering"
+    - "airbag"
+    - "seat belt"
+    - "fuel"
+    - "wheel retention"
+    - "engine mount"
+    - "windshield retention"
+  escalation_levels:
+    - "L1"
+    - "L2"
+    - "L3"
+    - "L4"
+  justification_required: true
