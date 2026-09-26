@@ -118,16 +118,37 @@ def _extract_recent_tool_error(messages: list[Any]) -> str | None:
     return None
 
 
-def _summarize_tool_results(messages: list[Any], per_result_limit: int = 600) -> str:
+def _summarize_tool_results(messages: list[Any], per_result_limit: int = 2000) -> str:
     summaries: list[str] = []
     for msg in messages:
         if not isinstance(msg, ToolMessage):
             continue
         name = getattr(msg, "name", None) or "tool"
         content = msg.content if isinstance(msg.content, str) else str(msg.content)
+
+        formatted_text = ""
+        if name == "search_sop_documents":
+            try:
+                data = json.loads(content)
+                docs = data.get("results", []) or data.get("documents", [])
+                doc_lines = []
+                for d in docs:
+                    if isinstance(d, dict):
+                        doc_id = d.get("doc_id", "DOC")
+                        txt = d.get("text", "") or d.get("content", "") or d.get("summary", "")
+                        if txt:
+                            doc_lines.append(f"[{doc_id}]: {txt.strip()}")
+                if doc_lines:
+                    formatted_text = "\n".join(doc_lines)
+            except Exception:
+                pass
+
+        if not formatted_text:
+            formatted_text = content
+
         summaries.append(
             f"[{len(summaries)+1}] {name}: "
-            f"{_truncate_for_log(content, limit=per_result_limit)}"
+            f"{_truncate_for_log(formatted_text, limit=per_result_limit)}"
         )
     return "\n".join(summaries)
 
@@ -164,6 +185,8 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
             "\nYou have collected data above. Only call a tool if a "
             "question part still has zero supporting evidence.\n"
         )
+    else:
+        escalation_block = ""
     fanout = state.get("fanout_plan")
     fanout_block = (
         f"\n[SPECULATIVE FAN-OUT TARGET DOMAINS]:\n{fanout.get('guidance_prompt')}\n"

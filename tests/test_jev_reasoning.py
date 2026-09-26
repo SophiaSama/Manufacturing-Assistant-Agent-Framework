@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from nga.graph.orchestrator import _route_after_agent
@@ -14,7 +13,6 @@ from nga.rag_agent.jev_reasoning import (
     evaluate_fact_groundedness,
     get_typesafe_api_key,
     plan_speculative_fanout,
-    screen_evidence_contradictions,
 )
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.messages import ToolMessage
@@ -90,6 +90,19 @@ def get_typesafe_api_key() -> str | None:
         if key.lower().startswith("your-") or key.lower() in ("placeholder", "none", ""):
             return None
     return key or None
+
+
+def _extract_noul_prob(ans: Any) -> float:
+    """Safely extract calibrated probability from a NoulAnswer (.noul or .probability)."""
+    if ans is None:
+        return 0.0
+    val = getattr(ans, "noul", None)
+    if isinstance(val, (int, float)):
+        return float(val)
+    val = getattr(ans, "probability", None)
+    if isinstance(val, (int, float)):
+        return float(val)
+    return 0.0
 
 
 def evaluate_evidence_sufficiency(
@@ -174,7 +187,7 @@ def evaluate_evidence_sufficiency(
         score_ans = answers.get("evidence_completeness")
         choice_ans = answers.get("next_action")
 
-        prob = getattr(noul_ans, "probability", 0.0) if noul_ans else 0.0
+        prob = _extract_noul_prob(noul_ans)
         score_val = int(getattr(score_ans, "score", 1)) if score_ans else 1
         action_val = str(getattr(choice_ans, "choice", "query_database")) if choice_ans else "query_database"
         conf = float(getattr(choice_ans, "confidence", prob)) if choice_ans else prob
@@ -300,14 +313,15 @@ def evaluate_fact_groundedness(
         score_ans = answers.get("groundedness")
         choice_ans = answers.get("unsupported_claim_type")
 
-        prob = getattr(noul_ans, "probability", 0.0) if noul_ans else 0.0
+        prob = _extract_noul_prob(noul_ans)
         score_val = int(getattr(score_ans, "score", 1)) if score_ans else 1
         claim_type = str(getattr(choice_ans, "choice", "none")) if choice_ans else "none"
         claim_conf = float(getattr(choice_ans, "confidence", 0.0)) if choice_ans else 0.0
 
         # Calibrated grounding threshold:
-        # Pass: score >= 3 AND prob >= 0.40 AND not (claim_type != 'none' and claim_conf >= 0.75)
-        is_grounded = (score_val >= 3) and (prob >= 0.40) and not (claim_type != "none" and claim_conf >= 0.75)
+        # Pass if groundedness score >= 3 AND no confident ungrounded claim AND (prob >= 0.35 or score >= 4)
+        has_ungrounded_claim = (claim_type != "none" and claim_conf >= 0.75)
+        is_grounded = (score_val >= 3) and (prob >= 0.35 or score_val >= 4) and not has_ungrounded_claim
 
         logger.info(
             "jev_grounding_evaluated is_grounded=%s score=%d faith_prob=%.2f ungrounded_type=%s conf=%.2f",
@@ -534,10 +548,10 @@ def plan_speculative_fanout(
         response = ts_client.system_one(state=state, questions=questions)
         answers = response.answers
 
-        p_sql = float(getattr(answers.get("needs_sql_db"), "probability", 0.0))
-        p_sop = float(getattr(answers.get("needs_sop_procedures"), "probability", 0.0))
-        p_qual = float(getattr(answers.get("needs_supplier_quality"), "probability", 0.0))
-        p_maint = float(getattr(answers.get("needs_maintenance_logs"), "probability", 0.0))
+        p_sql = _extract_noul_prob(answers.get("needs_sql_db"))
+        p_sop = _extract_noul_prob(answers.get("needs_sop_procedures"))
+        p_qual = _extract_noul_prob(answers.get("needs_supplier_quality"))
+        p_maint = _extract_noul_prob(answers.get("needs_maintenance_logs"))
 
         depth_ans = answers.get("cross_source_depth")
         depth = str(getattr(depth_ans, "choice", "single_source")) if depth_ans else "single_source"
@@ -670,7 +684,7 @@ def detect_cross_source_contradiction(
         response = ts_client.system_one(state=state, questions=questions)
         answers = response.answers
 
-        p_contra = float(getattr(answers.get("has_contradiction"), "probability", 0.0))
+        p_contra = _extract_noul_prob(answers.get("has_contradiction"))
         choice_nature = answers.get("conflict_nature")
         nature = str(getattr(choice_nature, "choice", "none")) if choice_nature else "none"
 

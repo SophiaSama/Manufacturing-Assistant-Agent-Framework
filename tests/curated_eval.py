@@ -12,7 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 logging.basicConfig(level=logging.INFO)
 
@@ -58,11 +58,15 @@ def main() -> None:
     curated = [q for q in questions if q.get("id") in CURATED_IDS]
     print(f"Running {len(curated)} curated questions with {settings.openrouter_model}")
 
+    from nga.evaluation.judge import make_jev_judge
+    jev_judge = make_jev_judge()
+
     summary, results, md_path, json_path = run_evaluation_suite(
         agent_graph=graph,
         questions=curated,
-        run_label=f"curated_real_{len(curated)}q",
+        run_label=f"curated_real_{len(curated)}q_jev",
         role="manager",
+        judge=jev_judge,
         cache_mode="cold",
     )
     print(f"\nReport: {md_path}\nJSON:   {json_path}")
