@@ -32,6 +32,7 @@ from nga.models.answer_schema import (
     render_final_answer,
 )
 from nga.providers.factory import make_chat_model
+from nga.rag_agent.classifier import classify_model_route
 from nga.rag_agent.rbac import SYSTEM_PROMPTS
 from nga.tools.sql_tool import describe_schema
 
@@ -68,10 +69,24 @@ def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
 
 # ── Node: prepare ─────────────────────────────────────────────────────────────
 
-def _prepare_node(state: AgentState) -> dict[str, Any]:
-    last = state["messages"][-1]
-    question = last.content if hasattr(last, "content") else str(last)
-    return {"question_parts": extract_question_parts(question)}
+def _make_prepare_node(settings: Settings):
+    def _prepare_node(state: AgentState) -> dict[str, Any]:
+        last = state["messages"][-1]
+        question = last.content if hasattr(last, "content") else str(last)
+        route_info = classify_model_route(question, settings)
+        logger.info(
+            "model_route_selected choice=%s model=%s source=%s confidence=%s",
+            route_info.get("choice"),
+            route_info.get("model_name"),
+            route_info.get("source"),
+            route_info.get("confidence"),
+        )
+        return {
+            "question_parts": extract_question_parts(question),
+            "model_route": route_info,
+        }
+
+    return _prepare_node
 
 
 # ── Response policy prompt ─────────────────────────────────────────────────────
@@ -162,9 +177,21 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
 # ── Node: agent ──────────────────────────────────────────────────────────────
 
 def _make_agent_node(settings: Settings, sql_tool, retrieval_tool, schema: str = ""):
-    llm = make_chat_model(settings).bind_tools([sql_tool, retrieval_tool])
+    tools = [sql_tool, retrieval_tool]
+    # Cache chat models per model identifier to avoid repeated client instantiation
+    models_by_slug: dict[str, Any] = {}
+
+    def _get_model_for_state(state: AgentState):
+        route = state.get("model_route") or {}
+        model_slug = route.get("model_name") or settings.openrouter_model
+        if model_slug not in models_by_slug:
+            models_by_slug[model_slug] = make_chat_model(
+                settings, model_override=model_slug
+            ).bind_tools(tools)
+        return models_by_slug[model_slug]
 
     def _agent_node(state: AgentState) -> dict[str, Any]:
+        llm = _get_model_for_state(state)
         messages = [
             SystemMessage(content=_build_response_policy(state, schema)),
             *state["messages"],
@@ -397,7 +424,7 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
         schema = ""
 
     graph = StateGraph(AgentState)
-    graph.add_node("prepare", _prepare_node)
+    graph.add_node("prepare", _make_prepare_node(settings))
     graph.add_node(
         "agent",
         _make_agent_node(settings, wrapped_sql, wrapped_retrieval, schema),

@@ -56,7 +56,8 @@ jobs:
       - name: Run unit, API & stress test suites
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
-        run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py -v
+          TYPESAFE_API_TEST: ${{ secrets.TYPESAFE_API_TEST || secrets.TYPESAFE_API_KEY }}
+        run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py tests/test_entity_alignment.py -v
 
       # CI runners start from a fresh checkout where data/ (vector store, graph
       # store) is gitignored and therefore absent. Without an ingested corpus the
