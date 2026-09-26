@@ -356,12 +356,20 @@ def _get_searched_categories(messages: list[Any]) -> str:
 
 
 def _make_synthesis_node(settings: Settings):
-    structured_model = None
-    try:
-        base_model = make_chat_model(settings)
-        structured_model = base_model.with_structured_output(FinalAnswer)
-    except Exception as exc:
-        logger.info("structured_output_unavailable reason=%s", exc)
+    # Cache structured models per model identifier to avoid repeated client instantiation
+    structured_models_by_slug: dict[str, Any] = {}
+
+    def _get_structured_model_for_state(state: AgentState):
+        route = state.get("model_route") or {}
+        model_slug = route.get("model_name") or settings.openrouter_model
+        if model_slug not in structured_models_by_slug:
+            try:
+                base_model = make_chat_model(settings, model_override=model_slug)
+                structured_models_by_slug[model_slug] = base_model.with_structured_output(FinalAnswer)
+            except Exception as exc:
+                logger.info("structured_output_unavailable model=%s reason=%s", model_slug, exc)
+                structured_models_by_slug[model_slug] = None
+        return structured_models_by_slug[model_slug]
 
     def _synthesis_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
@@ -385,6 +393,7 @@ def _make_synthesis_node(settings: Settings):
         answer_text = last.content if hasattr(last, "content") else str(last)
 
         final = None
+        structured_model = _get_structured_model_for_state(state)
         if structured_model is not None:
             try:
                 prompt = (

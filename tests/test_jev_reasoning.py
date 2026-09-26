@@ -520,3 +520,58 @@ def test_prepare_node_with_speculative_fanout():
     assert "fanout_plan" in result
     assert result["fanout_plan"]["cross_source_depth"] in ("single_source", "dual_source", "triangulation")
     assert "recommended_sources" in result["fanout_plan"]
+
+
+def test_synthesis_node_follows_routed_model_and_fallback():
+    """Synthesis node dynamically resolves model from state['model_route'] or falls back to openrouter_model."""
+    from nga.config import Settings
+    from nga.graph.orchestrator import _make_synthesis_node
+
+    settings = Settings.from_env()
+    synthesis_fn = _make_synthesis_node(settings)
+
+    base_state: AgentState = {
+        "messages": [
+            HumanMessage(content="What is the torque?"),
+            AIMessage(content="DIRECT ANSWER: The torque is 45 Nm.\nFINDINGS:\n- Spec is 45 Nm"),
+        ],
+        "question_parts": ["What is the torque?"],
+        "answered_parts": [],
+        "unanswered_parts": [],
+        "sql_results": [],
+        "retrieved_docs": [],
+        "final_answer": None,
+        "pending_recommendation": None,
+        "user_role": "operator",
+        "user_level": 1,
+        "model_route": None,
+        "evidence_sufficiency": None,
+        "token_usage": None,
+        "fact_groundedness": None,
+        "fanout_plan": None,
+        "contradiction_resolution": None,
+    }
+
+    created_overrides = []
+
+    def mock_make_chat_model(cfg, model_override=None):
+        created_overrides.append(model_override)
+        mock_llm = MagicMock()
+        mock_structured = MagicMock()
+        mock_structured.invoke.return_value = {"direct_answer": "45 Nm", "findings": []}
+        mock_llm.with_structured_output.return_value = mock_structured
+        return mock_llm
+
+    with patch("nga.graph.orchestrator.make_chat_model", side_effect=mock_make_chat_model):
+        # 1. When model_route is None, should use settings.openrouter_model
+        state_fallback = dict(base_state)
+        state_fallback["model_route"] = None
+        synthesis_fn(state_fallback)
+        assert created_overrides[-1] == settings.openrouter_model
+
+        # 2. When model_route has specific model_name, should use routed model
+        state_routed = dict(base_state)
+        state_routed["model_route"] = {"model_name": "custom/routed-model-v1"}
+        synthesis_fn(state_routed)
+        assert created_overrides[-1] == "custom/routed-model-v1"
+
