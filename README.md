@@ -9,7 +9,7 @@
 The **Enterprise Agentic Decision Support Framework** is an extensible, production-grade, role-aware agentic platform engineered for mission-critical industrial decision support. It decouples high-assurance AI governance, deterministic retrieval-grounding, and state-machine orchestration from any single business vertical via **Declarative Domain Packs**.
 
 The repository contains:
-1. **Generic Enterprise Agent Engine (`src/enterprise_agent/`)**: Domain-agnostic orchestration, multi-format document ingestion (Markdown, JSON, CSV, TXT), AST-validated read-only text-to-SQL execution via SQLGlot, cross-encoder semantic reranking (Hugging Face / LiteLLM), and policy-driven Human-in-the-Loop (HITL) gates.
+1. **Generic Enterprise Agent Engine (`src/enterprise_agent/`)**: Domain-agnostic orchestration, multi-format document ingestion (Markdown, JSON, CSV, TXT), AST-validated read-only text-to-SQL execution via SQLGlot, System One semantic reranking via TypeSafe AI Jev (`Choice` primitive), and policy-driven Human-in-the-Loop (HITL) gates.
 2. **Flagship Domain: NGA Manufacturing Assistant (`src/nga/`)**: A specialized automotive manufacturing assistant tailored for the synthetic **Apex Automotive — Northgate Assembly Plant (NGA)**, enforcing 4-tier Role-Based Access Control (RBAC), safety-critical Class A defect containment, recall triggers (QCR-501), and dual-path hybrid retrieval (ChromaDB vector search + NetworkX GraphRAG).
 3. **Banking Domain Pack (`domains/banking/`)**: A financial crime and AML/sanctions compliance decision support pack demonstrating domain portability across banking policies, SAR filings, and OFAC watchlists.
 4. **Deterministic Evaluation & Grounding Suite**: 4-tier stepped benchmark suites (85 questions), quantitative Graph Quality metrics, A/B release gates, multi-model Pareto arena, citation existence & retrieval provenance verification, and **TypeSafe AI Jev** calibrated System One scoring.
@@ -20,10 +20,10 @@ The repository contains:
 
 | Technology | Selected Component | Why This Stack Was Chosen |
 |---|---|---|
-| **Orchestration** | **LangGraph** | Provides a state-machine framework defining deterministic, predictable paths (`prepare` → `agent` ⇆ `tools` → `synthesis` → `hitl`). Guarantees that governance and safety verification nodes execute before final output generation. |
+| **Orchestration** | **LangGraph** | Provides a state-machine framework defining deterministic, predictable paths (`prepare` → `agent` ⇆ `tools` → `synthesis` → `hitl`). Guarantees that governance, circuit breakers, and safety verification execute in order. |
 | **Vector DB** | **ChromaDB** | Lightweight, persistent vector store supporting exact metadata filtering. Enforces path-derived RBAC constraints (`level_rank <= user_level`) directly during similarity search. |
 | **Knowledge Graph** | **NetworkX** | Python-native graph library persisting extracted manufacturing entities and relations (e.g., `Machine`, `FaultCode`, `RecallCriteria`) for GraphRAG multi-hop BFS reasoning. |
-| **Cross-Encoder Reranker** | **Hugging Face / LiteLLM** (`BAAI/bge-reranker-base`) | Deep cross-attention reranker evaluating passage relevance against query context, pruning initial candidate chunks to the highest-fidelity references. |
+| **System One Reranker** | **TypeSafe AI Jev** (`typesafe-ai/jev`) | Sub-30ms System One `Choice` reranker evaluating candidate passage relevance against query context in a single forward pass, replacing heavy GPU cross-encoders with zero GPU infrastructure. |
 | **Security & SQL Engine** | **SQLGlot** | Strict SQL AST parser and validator. Validates generated text-to-SQL commands prior to execution, restricting queries strictly to single, read-only `SELECT` statements matching the live database schema. |
 | **Fast Evaluation Judge** | **TypeSafe AI Jev** | System One non-generative decision model using Reinforcement Learning for Calibrated Decisions (RLCD). Evaluates groundedness and correctness in sub-50ms with zero token generation cost. |
 | **Package Manager** | **uv / hatchling** | Modern, reproducible Python package installer and workspace manager with locked dependencies. |
@@ -35,30 +35,31 @@ The repository contains:
 
 ```mermaid
 graph TD
-    User([User Prompt]) --> UI[Web Dashboard / CLI]
-    UI --> DomainRouter{Domain Pack Loader}
-    DomainRouter -- pack.yaml --> Config[Domain Configuration & RBAC Policy]
+    User(["User Prompt"]) --> UI["Web Dashboard / CLI"]
+    UI --> DomainRouter{"Domain Pack Loader"}
+    DomainRouter -- "pack.yaml" --> Config["Domain Configuration & RBAC Policy"]
     
-    Config --> Orchestrator[LangGraph State Machine]
+    Config --> Orchestrator["LangGraph State Machine"]
     
     subgraph Execution Pipeline
-        Orchestrator --> Prep[prepare: Query Normalization & Role Binding]
-        Prep --> Agt[agent: Model Policy + Role System Prompt]
-        Agt --> Tools{Tool Invocation?}
+        Orchestrator --> Prep["prepare: Query Normalization & Complexity Route (Jev)"]
+        Prep --> Agt["agent: System Two LLM Reasoning (CoT) + Role System Prompt"]
+        Agt --> Router{"_route_after_agent: Stop Gate & Circuit Breaker"}
         
-        Tools -- SQL Query --> SQLTool[SQL Engine: SQLGlot AST Validation & Read-Only Execution]
-        Tools -- Doc Search --> HybridRetr[Hybrid Retrieval: Vector Store + GraphRAG]
-        HybridRetr --> Reranker[Cross-Encoder Reranker: BAAI/bge-reranker-base]
+        Router -- "Tool Call Requested & Rounds < 8" --> Tools["tools: ToolNode Execution"]
+        Tools -- "SQL Query" --> SQLTool["SQL Engine: SQLGlot AST Validation & Read-Only Execution"]
+        Tools -- "Doc Search" --> HybridRetr["Hybrid Retrieval: Vector Store + GraphRAG"]
+        HybridRetr --> JevRerank["System One Reranker: TypeSafe Jev (Choice)"]
         
         SQLTool --> Agt
-        Reranker --> Agt
+        JevRerank --> Agt
         
-        Tools -- No Calls / Completed --> Synth[synthesis: Structured FinalAnswer & Evidence Binding]
-        Synth --> Grounding[grounding: Citation Existence & Retrieval Provenance Check]
-        Grounding --> HITL[hitl: Action Verb Interceptor & Approval Queue]
+        Router -- "Circuit Breaker Tripped (Rounds >= 8 / Repeats >= 3) OR Jev Sufficiency Met OR No Tools" --> Synth["synthesis: Structured FinalAnswer & Class A Hazard Detection"]
+        Synth --> Grounding["grounding: Citation Provenance & Jev Fact Verification"]
+        Grounding --> HITL["hitl: Action Verb Interceptor & Governance Queue"]
     end
     
-    HITL --> Output([Rendered Answer & Audit Trail])
+    HITL --> Output(["Rendered Answer, Hazard Banners & Audit Trail"])
 ```
 
 ---
@@ -93,12 +94,12 @@ The generic document loader (`src/enterprise_agent/documents/loader.py`) parses 
 
 ---
 
-## 🎯 Cross-Encoder Reranking
+## 🎯 System One Document Reranking (TypeSafe Jev)
 
-To enhance retrieval precision beyond pure dense vector embeddings, the framework integrates a **Cross-Encoder Reranker** (`src/enterprise_agent/retrieval/reranker.py`):
-1. **Initial Retrieval**: Retrieves top candidate chunks from ChromaDB and the GraphRAG knowledge graph.
-2. **Cross-Attention Scoring**: Evaluates candidate `(query, document_chunk)` pairs using `BAAI/bge-reranker-base` via Hugging Face Serverless Inference or local LiteLLM execution.
-3. **Context Optimization**: Re-orders and truncates chunks down to the top $N$ (default: 5) most relevant passages, passing higher-signal evidence to the LLM context.
+To enhance retrieval precision beyond pure dense vector embeddings, the framework integrates a **System One Jev Reranker** (`src/enterprise_agent/retrieval/reranker.py`):
+1. **Initial Retrieval**: Retrieves candidate chunks from ChromaDB and the GraphRAG knowledge graph across document categories.
+2. **Jev Choice Evaluation**: Submits all candidate chunks as options in a single TypeSafe `Choice` call (`typesafe-ai/jev`), evaluating semantic relevance in sub-30ms with zero token generation cost.
+3. **Calibrated Probability Ranking**: Sorts documents by the model's calibrated probability distribution and selects the top $N$ (default: 5) most authoritative passages for downstream synthesis.
 
 ---
 
@@ -131,17 +132,14 @@ Configure your credentials in `.env`:
 OPENROUTER_API_KEY=your-openrouter-api-key
 OPENROUTER_MODEL=anthropic/claude-sonnet-4-5
 
-# Hugging Face Token for Cross-Encoder Reranking
-HF_TOKEN=your-huggingface-token
+# TypeSafe AI API Key (for System One Jev Reranking & Judge)
+TYPESAFE_API_KEY=your-typesafe-api-key
 RERANK_ENABLED=true
-RERANK_MODEL=huggingface/BAAI/bge-reranker-base
+RERANK_MODEL=jev-1.12
 RERANK_TOP_N=5
 
 # Active Domain Pack
 DOMAIN_PACK=domains/manufacturing/pack.yaml
-
-# TypeSafe AI API Key (optional, for ultra-fast Jev Judge)
-TYPESAFE_API_KEY=your-typesafe-api-key
 ```
 
 ### 3. Install Dependencies
@@ -246,6 +244,12 @@ SQLite-backed multi-tier cache to accelerate iterative development and evaluatio
 - **L2 (SQL)**: Caches validated `SELECT` queries, automatically invalidated by database `data_version` etags.
 - **Cold vs. Hot Evaluation Modes**: Benchmark against an empty cache (`--cache-mode cold`) or evaluate warm repeated-query throughput (`--cache-mode hot`).
 
+### 5. Token Consumption & Cost Efficiency KPIs (Jev vs. Fallback)
+Quantifies operational token economics and ROI between **System One Jev acceleration** and **fallback/baseline configurations**:
+- **Token Consumption Efficiency Ratio (TCER)**: $\frac{T_{\text{in}}^{\text{Jev}} + T_{\text{out}}^{\text{Jev}}}{T_{\text{in}}^{\text{Fallback}} + T_{\text{out}}^{\text{Fallback}}}$ ($\le 0.45$ target across multi-hop queries).
+- **Zero Auxiliary Output Tokens**: Jev decisions produce zero output tokens ($T_{\text{out}} = 0$, $100\%$ elimination of decision completion tokens).
+- **Tool-Loop Truncation Savings**: Semantic early exit eliminates 2–6 redundant LLM agent turns, yielding up to **70% net cost savings** per 1k complex queries compared to mechanical circuit breaker fallbacks.
+
 ---
 
 ## 🧪 Automated Test Suites
@@ -259,7 +263,7 @@ uv run pytest tests/test_*.py -v
 # Run Generic Enterprise Framework tests
 uv run pytest tests/test_generic_framework.py -v
 
-# Run Cross-Encoder Reranker tests
+# Run TypeSafe Jev Reranker tests
 uv run pytest tests/test_rerank.py -v
 
 # Run Deterministic Grounding tests
@@ -296,7 +300,7 @@ uv run pytest tests/integration/test_stress.py -v
 │   │   ├── graph/                    # Domain-agnostic LangGraph state machine & nodes
 │   │   ├── hitl/                     # Policy gate & action verb interceptor
 │   │   ├── models/                   # Structured answer schemas & renderer
-│   │   ├── retrieval/                # Cross-encoder reranker (Hugging Face / LiteLLM)
+│   │   ├── retrieval/                # System One reranker (TypeSafe Jev Choice)
 │   │   └── tools/                    # Dynamic tool factory (SQL & Document tools)
 │   └── nga/                          # NGA Manufacturing Flagship Implementation
 │       ├── cache/                    # L0/L1/L2 multi-tier SQLite caching

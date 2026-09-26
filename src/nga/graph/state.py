@@ -20,3 +20,5 @@ class AgentState(TypedDict):
     user_role: str
     user_level: int
     model_route: dict[str, Any] | None
+    evidence_sufficiency: dict[str, Any] | None
+    token_usage: dict[str, Any] | None

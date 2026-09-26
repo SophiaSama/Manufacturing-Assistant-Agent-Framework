@@ -53,6 +53,7 @@ def test_rerank_without_api_key(monkeypatch):
 def test_rerank_with_mocked_jev(monkeypatch):
     """Test rerank execution, score attachment, and ordering with mock Jev."""
     monkeypatch.setenv("TYPESAFE_API_KEY", "ts_mock_key")
+    monkeypatch.delenv("RERANK_MODEL", raising=False)
 
     docs = [
         {"text": "Low relevance about fruit", "doc_id": "D1"},

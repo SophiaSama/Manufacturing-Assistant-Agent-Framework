@@ -33,6 +33,10 @@ from nga.models.answer_schema import (
 )
 from nga.providers.factory import make_chat_model
 from nga.rag_agent.classifier import classify_model_route
+from nga.rag_agent.jev_reasoning import (
+    calculate_reasoning_token_telemetry,
+    evaluate_evidence_sufficiency,
+)
 from nga.rag_agent.rbac import SYSTEM_PROMPTS
 from nga.tools.sql_tool import describe_schema
 
@@ -238,8 +242,41 @@ def _route_after_agent(state: AgentState) -> str:
     last = messages[-1]
     if not getattr(last, "tool_calls", None):
         return "synthesis"
+
+    # LAYER 1: Hard Mechanical Circuit Breaker (Fail-Safe Ceiling)
     if _tool_loop_detected(messages):
+        logger.warning(
+            "circuit_breaker_tripped tool_rounds=%d repeats=%d",
+            _count_tool_rounds(messages),
+            MAX_IDENTICAL_TOOL_CALL_REPEATS,
+        )
         return "synthesis"
+
+    # LAYER 2: Semantic Sufficiency Gate (Jev System One Early Exit)
+    if _tool_evidence_ran(messages):
+        first_human = next(
+            (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
+            "",
+        )
+        parts = state.get("question_parts", [])
+        evidence_summary = _summarize_tool_results(messages)
+
+        sufficiency = evaluate_evidence_sufficiency(
+            query=first_human,
+            question_parts=parts,
+            evidence=evidence_summary,
+        )
+
+        if sufficiency.is_complete:
+            logger.info(
+                "semantic_early_exit_triggered round=%d prob=%.2f score=%d action=%s",
+                _count_tool_rounds(messages),
+                sufficiency.is_sufficient_prob,
+                sufficiency.completeness_score,
+                sufficiency.next_action,
+            )
+            return "synthesis"
+
     return "tools"
 
 
@@ -343,12 +380,42 @@ def _make_synthesis_node(settings: Settings):
         rendered = render_final_answer(final)
         recommendation = final.recommendation or extract_recommendation(rendered)
 
+        # Calculate Token & Cost Telemetry KPI
+        messages = state.get("messages", [])
+        tool_rounds = _count_tool_rounds(messages)
+        prompt_tokens = sum(
+            len(getattr(m, "content", "")) // 4
+            for m in messages
+            if not isinstance(m, AIMessage)
+        )
+        completion_tokens = sum(
+            len(getattr(m, "content", "")) // 4
+            for m in messages
+            if isinstance(m, AIMessage)
+        )
+        prompt_tokens = max(1200, prompt_tokens)
+        completion_tokens = max(250, completion_tokens + len(rendered) // 4)
+
+        early_exit = tool_rounds < MAX_TOOL_CALL_ROUNDS and not _tool_loop_detected(messages)
+        token_telemetry = calculate_reasoning_token_telemetry(
+            llm_prompt_tokens=prompt_tokens,
+            llm_completion_tokens=completion_tokens,
+            jev_calls_count=1 if _tool_evidence_ran(messages) else 0,
+            jev_input_tokens=min(1800, max(300, len(answer_text) // 4)),
+            tool_rounds_executed=tool_rounds,
+            early_exit_triggered=early_exit,
+        )
+
+        final_dump = final.model_dump()
+        final_dump["token_telemetry"] = token_telemetry
+
         return {
             "messages": [AIMessage(content=rendered)],
             "pending_recommendation": recommendation,
             "answered_parts": final.answered_questions,
             "unanswered_parts": final.unanswered_questions,
-            "final_answer": final.model_dump(),
+            "final_answer": final_dump,
+            "token_usage": token_telemetry,
         }
 
     return _synthesis_node

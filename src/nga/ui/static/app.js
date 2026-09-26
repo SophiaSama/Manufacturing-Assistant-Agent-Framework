@@ -681,11 +681,22 @@
       `;
     }
 
-    // 7. Sub-questions breakdown
-    if (Array.isArray(fa.unanswered_questions) && fa.unanswered_questions.length > 0) {
+    // 8. Token Economics & System One Jev Efficiency Badge
+    const tokenInfo = data.token_usage || fa.token_telemetry;
+    if (tokenInfo && tokenInfo.kpis) {
+      const k = tokenInfo.kpis;
       html += `
-        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">
-          <em>Pending clarification:</em> ${fa.unanswered_questions.map((q) => escapeHTML(q)).join(", ")}
+        <div class="token-economics-banner" style="font-size: 0.78rem; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 6px; padding: 6px 10px; margin-top: 0.5rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <span style="color: var(--accent); font-weight: 600;">⚡ System One Efficiency:</span>
+            <span style="color: var(--text-main); margin-left: 4px;">TCER <strong>${k.tcer}</strong></span>
+            <span style="color: var(--text-dim); margin: 0 4px;">•</span>
+            <span style="color: #10b981; font-weight: 600;">${k.cost_savings_pct}% Cost Savings</span>
+            ${k.early_exit_triggered ? '<span class="badge badge-success" style="margin-left: 6px; font-size: 0.7rem;">Early Exit Round ' + k.tool_rounds_executed + '</span>' : ''}
+          </div>
+          <div style="color: var(--text-muted); font-size: 0.75rem;">
+            Total: <strong>${(tokenInfo.totals.total_tokens || 0).toLocaleString()} tokens</strong> ($${(tokenInfo.totals.total_cost_usd || 0).toFixed(5)})
+          </div>
         </div>
       `;
     }

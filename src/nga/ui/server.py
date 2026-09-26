@@ -419,6 +419,7 @@ def create_app() -> FastAPI:
         rendered_answer: str = ""
         pending_rec: str | None = None
         decision_record: dict[str, Any] | None = None
+        captured_token_usage: dict[str, Any] | None = None
 
         logger.info("Chat turn started | Role=%s | Thread=%s | Question: %s", role.upper(), thread_id[:8], request.message[:80])
 
@@ -500,6 +501,10 @@ def create_app() -> FastAPI:
                             rendered_answer = render_final_answer(final_answer_obj)
                             pending_rec = final_answer_obj.recommendation
 
+                        captured_token_usage = node_data.get("token_usage") or (
+                            fa_payload.get("token_telemetry") if isinstance(fa_payload, dict) else None
+                        )
+
                         trace_steps.append({
                             "node": "synthesis",
                             "timestamp": ts,
@@ -508,6 +513,7 @@ def create_app() -> FastAPI:
                                 "class_a_alert": final_answer_obj.class_a_alert if final_answer_obj else False,
                                 "escalation_level": final_answer_obj.escalation_level if final_answer_obj else None,
                                 "recall_criteria": final_answer_obj.recall_criteria_met if final_answer_obj else [],
+                                "token_usage": captured_token_usage,
                             },
                         })
 
@@ -549,6 +555,7 @@ def create_app() -> FastAPI:
             "trace_steps": trace_steps,
             "tool_calls": tool_calls_log,
             "pending_decision": decision_record,
+            "token_usage": captured_token_usage,
         }
 
     # ── HIL Decision Endpoints ────────────────────────────────────────────────
