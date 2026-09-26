@@ -231,7 +231,6 @@ def test_orchestrator_prepare_node_populates_model_route(monkeypatch):
 # ── Token Consumption KPIs & Model Reporting Unit Tests ───────────────────────
 
 def test_build_summary_with_token_telemetry_and_model_name():
-    from nga.evaluation.report import save_report
     from nga.rag_agent.jev_reasoning import calculate_reasoning_token_telemetry
 
     tok1 = calculate_reasoning_token_telemetry(
@@ -303,6 +302,7 @@ def test_generate_markdown_report_includes_token_kpis_and_model():
 
 def test_save_report_persists_model_and_token_summary(tmp_path):
     import json
+
     from nga.evaluation.report import save_report
     from nga.rag_agent.jev_reasoning import calculate_reasoning_token_telemetry
 
