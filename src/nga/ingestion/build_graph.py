@@ -223,6 +223,11 @@ def main() -> None:
         default=None,
         help="Corpus profile (default: from CORPUS_PROFILE env, 'main')",
     )
+    parser.add_argument(
+        "--skip-alignment",
+        action="store_true",
+        help="Skip TypeSafe AI entity alignment post-processing step",
+    )
     args = parser.parse_args()
 
     settings = Settings.from_env()
@@ -254,9 +259,18 @@ def main() -> None:
 
     llm = make_chat_model(settings)
     graph = build_graph_from_documents(docs, llm, max_docs=max_docs or len(docs))
+
+    if not args.skip_alignment:
+        from nga.ingestion.entity_alignment import align_entities
+        logger.info("Running TypeSafe AI entity alignment...")
+        # require_api_key=True ensures failure if neither TYPESAFE_API_KEY nor TYPESAFE_API_TEST is set
+        alignment_report = align_entities(graph, require_api_key=True)
+        logger.info("Entity alignment complete: %s", alignment_report)
+
     save_graph(graph, settings.graph_store_dir)
     logger.info("GraphRAG build complete.")
 
 
 if __name__ == "__main__":
     main()
+

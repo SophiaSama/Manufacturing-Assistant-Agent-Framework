@@ -130,8 +130,9 @@ def generate_multi_model_analysis(
         avg_lat = float(summary.get("avg_latency_s", 0.0))
 
         # Approximate or aggregate token metrics
-        avg_prompt_tokens = int(summary.get("avg_prompt_tokens", 1400))
-        avg_completion_tokens = int(summary.get("avg_completion_tokens", 350))
+        token_sum = report.get("token_summary") or summary.get("token_summary") or {}
+        avg_prompt_tokens = int(token_sum.get("avg_prompt_tokens") or summary.get("avg_prompt_tokens", 1400))
+        avg_completion_tokens = int(token_sum.get("avg_completion_tokens") or summary.get("avg_completion_tokens", 350))
         cost_per_query = calculate_query_cost(model_slug, avg_prompt_tokens, avg_completion_tokens)
         cost_per_1k = round(cost_per_query * 1000, 3)
 
@@ -147,6 +148,7 @@ def generate_multi_model_analysis(
             "avg_latency_s": avg_lat,
             "avg_prompt_tokens": avg_prompt_tokens,
             "avg_completion_tokens": avg_completion_tokens,
+            "avg_tcer": token_sum.get("avg_tcer"),
             "cost_per_query_usd": cost_per_query,
             "cost_per_1k": cost_per_1k,
         }

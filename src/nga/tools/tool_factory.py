@@ -83,7 +83,7 @@ def make_retrieval_tool(store, graph=None, embeddings=None, user_level: int = 1,
 
     @tool
     def search_sop_documents(
-        query: str, categories: list[str] | None = None
+        query: str, categories: list[str] | str | None = None
     ) -> str:
         """Search NGA reference documents: SOPs, machine specs, failure analysis,
         recall criteria, work orders, supplier quality, and training records.

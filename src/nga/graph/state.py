@@ -19,3 +19,9 @@ class AgentState(TypedDict):
     # NGA-specific: role of the requesting user
     user_role: str
     user_level: int
+    model_route: dict[str, Any] | None
+    evidence_sufficiency: dict[str, Any] | None
+    token_usage: dict[str, Any] | None
+    fact_groundedness: dict[str, Any] | None
+    fanout_plan: dict[str, Any] | None
+    contradiction_resolution: dict[str, Any] | None

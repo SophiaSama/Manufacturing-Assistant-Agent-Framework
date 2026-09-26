@@ -140,9 +140,12 @@ def run_single_eval_question(
     question_parts: list[str] = []
     collected_messages: list[Any] = []
     cache_stats: dict | None = None
+    captured_token_usage: dict[str, Any] | None = None
+    captured_model_name: str | None = None
 
     def _stream():
         nonlocal answer_text, error_msg, question_parts, collected_messages, cache_stats
+        nonlocal captured_token_usage, captured_model_name
         before = cache.snapshot() if cache is not None else None
         try:
             for update in agent_graph.stream(
@@ -153,10 +156,13 @@ def run_single_eval_question(
                 if not isinstance(update, dict):
                     continue
                 prepare_update = update.get("prepare")
-                if prepare_update and isinstance(prepare_update.get("question_parts"), list):
-                    question_parts = [
-                        p for p in prepare_update["question_parts"] if isinstance(p, str) and p.strip()
-                    ]
+                if prepare_update:
+                    if isinstance(prepare_update.get("question_parts"), list):
+                        question_parts = [
+                            p for p in prepare_update["question_parts"] if isinstance(p, str) and p.strip()
+                        ]
+                    if isinstance(prepare_update.get("model_route"), dict):
+                        captured_model_name = prepare_update["model_route"].get("model_name")
 
                 agent_update = update.get("agent")
                 if agent_update and "messages" in agent_update:
@@ -171,6 +177,10 @@ def run_single_eval_question(
                     answer_text = _render_agent_response(synthesis_update, question_parts)
                     if "messages" in synthesis_update:
                         collected_messages.extend(synthesis_update["messages"])
+                    if "token_usage" in synthesis_update and synthesis_update["token_usage"]:
+                        captured_token_usage = synthesis_update["token_usage"]
+                    elif isinstance(synthesis_update.get("final_answer"), dict):
+                        captured_token_usage = synthesis_update["final_answer"].get("token_telemetry")
 
             if not answer_text and collected_messages:
                 last = collected_messages[-1]
@@ -227,6 +237,8 @@ def run_single_eval_question(
         cache_stats=cache_stats,
         tier=tier,
         grounding=grounding_result,
+        token_usage=captured_token_usage,
+        model_name=captured_model_name,
     )
 
 
@@ -241,6 +253,7 @@ def run_evaluation_suite(
     cache_mode: str = "cold",
     eval_cache_db_path: str | None = None,
     corpus_base_dir: str | None = None,
+    model_name: str | None = None,
 ) -> tuple[dict[str, Any], list[ScoreResult], Path, Path]:
     """Run full evaluation suite, stream progress, compute summary, and save reports.
 
@@ -285,6 +298,7 @@ def run_evaluation_suite(
         results.append(result)
 
         if progress_callback:
+            tu = getattr(result, "token_usage", None) or {}
             progress_callback({
                 "type": "progress",
                 "current": idx,
@@ -295,6 +309,8 @@ def run_evaluation_suite(
                 "passed": result.passed,
                 "score": result.overall_score,
                 "latency_s": result.latency_s,
+                "tokens": tu.get("totals", {}).get("total_tokens"),
+                "tcer": tu.get("kpis", {}).get("tcer"),
                 "error": result.error,
             })
 
@@ -305,6 +321,7 @@ def run_evaluation_suite(
     md_path, json_path = save_report(
         results, reports_dir=reports_dir, run_label=label,
         cache_mode=cache_mode, cache_summary=cache_summary,
+        model_name=model_name,
     )
     summary = build_summary(results)
     summary["run_label"] = label
@@ -356,9 +373,13 @@ def list_evaluation_reports(reports_dir: str = "reports/eval") -> list[dict[str,
 
     reports = []
     for json_file in sorted(out_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if json_file.name == "history.json":
+            continue
         try:
             with open(json_file, encoding="utf-8") as f:
                 data = json.load(f)
+            if not isinstance(data, dict):
+                continue
             summary = data.get("summary", {})
             reports.append({
                 "run_label": data.get("run_label") or json_file.stem,
@@ -385,7 +406,8 @@ def get_evaluation_report(run_label: str, reports_dir: str = "reports/eval") -> 
         return None
     try:
         with open(json_path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return data if isinstance(data, dict) else None
     except Exception as exc:
         logger.warning("Error reading report %s: %s", json_path, exc)
         return None
@@ -436,6 +458,25 @@ def compare_evaluation_runs(
             "delta": int(sum_b.get("passed", 0)) - int(sum_a.get("passed", 0)),
         },
     }
+
+    # Token economics comparison
+    tok_a = report_a.get("token_summary") or sum_a.get("token_summary") or {}
+    tok_b = report_b.get("token_summary") or sum_b.get("token_summary") or {}
+    if tok_a or tok_b:
+        tcer_a = float(tok_a.get("avg_tcer", 0.0))
+        tcer_b = float(tok_b.get("avg_tcer", 0.0))
+        cost_a = float(tok_a.get("avg_cost_per_query_usd", 0.0))
+        cost_b = float(tok_b.get("avg_cost_per_query_usd", 0.0))
+        summary_delta["tcer"] = {
+            "a": tcer_a,
+            "b": tcer_b,
+            "delta": round(tcer_b - tcer_a, 3),
+        }
+        summary_delta["cost_per_query_usd"] = {
+            "a": cost_a,
+            "b": cost_b,
+            "delta": round(cost_b - cost_a, 6),
+        }
 
     # Category comparisons
     cats_a = {c["category"]: c for c in sum_a.get("by_category", [])}

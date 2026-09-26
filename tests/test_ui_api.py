@@ -324,3 +324,28 @@ def test_models_and_multi_model_api(client):
     assert len(mm_data["models"]) == 2
     assert "pareto_efficient_models" in mm_data
 
+
+def test_judge_benchmark_api(client):
+    res = client.get("/api/eval/judge-benchmark")
+    assert res.status_code == 200
+    data = res.json()
+    assert "available" in data
+    assert "judge_comparison" in data
+
+
+def test_markdown_reports_api(client):
+    res = client.get("/api/eval/markdown-reports")
+    assert res.status_code == 200
+    data = res.json()
+    assert "reports" in data
+    assert isinstance(data["reports"], list)
+
+
+def test_logs_api(client):
+    res = client.get("/api/logs?limit=50")
+    assert res.status_code == 200
+    data = res.json()
+    assert "logs" in data
+    assert "total_captured" in data
+
+
