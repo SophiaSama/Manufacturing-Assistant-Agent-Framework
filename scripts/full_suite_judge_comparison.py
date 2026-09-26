@@ -132,8 +132,13 @@ CONFLICT_SCENARIOS = [
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Full suite judge comparison benchmark.")
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of benchmark questions to evaluate")
+    args, _ = parser.parse_known_args()
+
     print("=" * 80)
-    print("NGA MANUFACTURING ASSISTANT — FULL SUITE JUDGE BENCHMARK (85 QUESTIONS)")
+    print("NGA MANUFACTURING ASSISTANT — FULL SUITE JUDGE BENCHMARK")
     print("=" * 80)
 
     questions_path = Path(__file__).resolve().parents[1] / "eval-questions" / "questions.json"
@@ -141,6 +146,8 @@ def main():
         data = json.load(f)
 
     questions: List[Dict[str, Any]] = data["questions"]
+    if args.limit and args.limit > 0:
+        questions = questions[:args.limit]
     print(f"Loaded {len(questions)} evaluation benchmark questions.")
 
     llm_judge = make_llm_judge()

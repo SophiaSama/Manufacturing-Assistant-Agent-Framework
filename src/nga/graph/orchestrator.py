@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -36,6 +37,9 @@ from nga.rag_agent.classifier import classify_model_route
 from nga.rag_agent.jev_reasoning import (
     calculate_reasoning_token_telemetry,
     evaluate_evidence_sufficiency,
+    evaluate_fact_groundedness,
+    plan_speculative_fanout,
+    screen_evidence_contradictions,
 )
 from nga.rag_agent.rbac import SYSTEM_PROMPTS
 from nga.tools.sql_tool import describe_schema
@@ -85,9 +89,19 @@ def _make_prepare_node(settings: Settings):
             route_info.get("source"),
             route_info.get("confidence"),
         )
+        fanout = plan_speculative_fanout(
+            query=question,
+            user_role=state.get("user_role", "operator"),
+        )
+        logger.info(
+            "speculative_fanout_planned depth=%s sources=%s",
+            fanout.cross_source_depth,
+            fanout.recommended_sources,
+        )
         return {
             "question_parts": extract_question_parts(question),
             "model_route": route_info,
+            "fanout_plan": asdict(fanout),
         }
 
     return _prepare_node
@@ -150,8 +164,16 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
             "\nYou have collected data above. Only call a tool if a "
             "question part still has zero supporting evidence.\n"
         )
-    else:
-        escalation_block = ""
+    fanout = state.get("fanout_plan")
+    fanout_block = (
+        f"\n[SPECULATIVE FAN-OUT TARGET DOMAINS]:\n{fanout.get('guidance_prompt')}\n"
+        if fanout and fanout.get("guidance_prompt") else ""
+    )
+    contradiction = state.get("contradiction_resolution")
+    conflict_block = (
+        f"\n{contradiction.get('resolution_guidance')}\n"
+        if contradiction and contradiction.get("has_contradiction") else ""
+    )
 
     return (
         f"{role_prompt}\n\n"
@@ -173,7 +195,7 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
         "answered_questions (list), unanswered_questions (list), recommendation (optional), "
         "class_a_alert (bool), escalation_level (string or null), "
         "recall_criteria_met (list of criteria codes like C1, C2 ...).\n"
-        f"{schema_block}{error_block}{collected_block}{escalation_block}"
+        f"{fanout_block}{conflict_block}{schema_block}{error_block}{collected_block}{escalation_block}"
         f"\nQuestion parts: {question_parts}"
     )
 
@@ -364,6 +386,10 @@ def _make_synthesis_node(settings: Settings):
         if final is None:
             final = parse_final_answer(answer_text, state.get("question_parts", []))
 
+        messages = state.get("messages", [])
+        fact_grounding = None
+        contradiction_dict = None
+
         if _is_ungrounded(state, final):
             final = FinalAnswer(
                 direct_answer=(
@@ -372,6 +398,57 @@ def _make_synthesis_node(settings: Settings):
                 ),
                 unanswered_questions=list(state.get("question_parts", [])),
             )
+        elif _tool_evidence_ran(messages):
+            # Check for cross-document / cross-source contradictions
+            conflict_res = screen_evidence_contradictions(messages)
+            if conflict_res and conflict_res.has_contradiction:
+                logger.info(
+                    "cross_source_contradiction_detected sources=%s nature=%s rule=%s",
+                    conflict_res.conflicting_sources,
+                    conflict_res.conflict_nature,
+                    conflict_res.precedence_rule,
+                )
+                contradiction_dict = asdict(conflict_res)
+                if not any("precedence" in f.lower() or "conflict" in f.lower() for f in final.findings):
+                    final.findings.append(f"Precedence Resolution: {conflict_res.precedence_rule}")
+                if not final.recommendation:
+                    final.recommendation = conflict_res.precedence_rule
+
+            first_human = next(
+                (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
+                "",
+            )
+            evidence_summary = _summarize_tool_results(messages)
+            grounding_result = evaluate_fact_groundedness(
+                query=first_human,
+                evidence=evidence_summary,
+                generated_answer=final.direct_answer,
+            )
+            fact_grounding = asdict(grounding_result)
+
+            if not grounding_result.is_grounded:
+                logger.warning(
+                    "hallucination_detected_by_jev score=%d faith_prob=%.2f claim_type=%s conf=%.2f action=quarantine",
+                    grounding_result.groundedness_score,
+                    grounding_result.is_faithful_prob,
+                    grounding_result.unsupported_claim_type,
+                    grounding_result.unsupported_claim_conf,
+                )
+                quarantine_notice = (
+                    f"⚠️ **Grounding Verification Alert**: The generated response contained ungrounded assertions "
+                    f"({grounding_result.unsupported_claim_type.replace('_', ' ')}) that could not be verified against "
+                    f"the retrieved manufacturing records and specifications.\n\n"
+                    f"To maintain manufacturing safety standards, unverified claims have been quarantined. "
+                    f"Please review the verified source evidence or refine your query."
+                )
+                final = FinalAnswer(
+                    direct_answer=quarantine_notice,
+                    findings=[f"Quarantined ungrounded assertion: {grounding_result.unsupported_claim_type}"],
+                    evidence=final.evidence,
+                    answered_questions=final.answered_questions,
+                    unanswered_questions=list(state.get("question_parts", [])),
+                    recommendation="Review raw source documents directly; do not proceed on unverified specifications.",
+                )
 
         # Auto-detect Class A if not already flagged
         if not final.class_a_alert and is_class_a_defect(final.direct_answer):
@@ -381,7 +458,6 @@ def _make_synthesis_node(settings: Settings):
         recommendation = final.recommendation or extract_recommendation(rendered)
 
         # Calculate Token & Cost Telemetry KPI
-        messages = state.get("messages", [])
         tool_rounds = _count_tool_rounds(messages)
         prompt_tokens = sum(
             len(getattr(m, "content", "")) // 4
@@ -397,17 +473,22 @@ def _make_synthesis_node(settings: Settings):
         completion_tokens = max(250, completion_tokens + len(rendered) // 4)
 
         early_exit = tool_rounds < MAX_TOOL_CALL_ROUNDS and not _tool_loop_detected(messages)
+        jev_calls = (3 if contradiction_dict else (2 if fact_grounding else 1)) if _tool_evidence_ran(messages) else 0
         token_telemetry = calculate_reasoning_token_telemetry(
             llm_prompt_tokens=prompt_tokens,
             llm_completion_tokens=completion_tokens,
-            jev_calls_count=1 if _tool_evidence_ran(messages) else 0,
-            jev_input_tokens=min(1800, max(300, len(answer_text) // 4)),
+            jev_calls_count=jev_calls,
+            jev_input_tokens=min(3600, max(300, (len(answer_text) // 4) * max(1, jev_calls))),
             tool_rounds_executed=tool_rounds,
             early_exit_triggered=early_exit,
         )
 
         final_dump = final.model_dump()
         final_dump["token_telemetry"] = token_telemetry
+        if fact_grounding:
+            final_dump["fact_groundedness"] = fact_grounding
+        if contradiction_dict:
+            final_dump["contradiction_resolution"] = contradiction_dict
 
         return {
             "messages": [AIMessage(content=rendered)],
@@ -416,6 +497,8 @@ def _make_synthesis_node(settings: Settings):
             "unanswered_parts": final.unanswered_questions,
             "final_answer": final_dump,
             "token_usage": token_telemetry,
+            "fact_groundedness": fact_grounding,
+            "contradiction_resolution": contradiction_dict,
         }
 
     return _synthesis_node
