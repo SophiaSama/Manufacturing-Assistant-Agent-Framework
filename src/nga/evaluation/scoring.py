@@ -28,6 +28,8 @@ class ScoreResult:
     cache_stats: dict | None = None  # per-layer hit/miss/ms when cache hot
     tier: str = "L2"
     grounding: GroundingResult | None = None
+    token_usage: dict[str, Any] | None = None
+    model_name: str | None = None
 
 
 def _parsed_tool_payloads(tool_outputs: list[str] | None) -> list[dict]:
@@ -129,6 +131,8 @@ def score_answer(
     cache_stats: dict | None = None,
     tier: str = "L2",
     grounding: GroundingResult | None = None,
+    token_usage: dict[str, Any] | None = None,
+    model_name: str | None = None,
 ) -> ScoreResult:
     checks = deterministic_checks(
         answer, expected_tools, tools_called, source_docs,
@@ -161,4 +165,6 @@ def score_answer(
         cache_stats=cache_stats,
         tier=tier,
         grounding=grounding,
+        token_usage=token_usage,
+        model_name=model_name,
     )

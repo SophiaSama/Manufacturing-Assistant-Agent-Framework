@@ -97,10 +97,10 @@ def run_question(
     question: str,
     thread_id: str,
     user_role: str = "engineer",
-) -> tuple[str, list[str], list[str]]:
+) -> tuple[str, list[str], list[str], dict[str, Any] | None, str | None]:
     """Run a single question through the agent graph.
 
-    Returns (rendered_answer, tools_called, tool_outputs).
+    Returns (rendered_answer, tools_called, tool_outputs, token_usage, model_name).
     """
     user_level = ACCESS_LEVELS.get(user_role, 3)
     initial_state = {
@@ -112,6 +112,8 @@ def run_question(
     tools_called: list[str] = []
     tool_outputs: list[str] = []
     question_parts: list[str] = []
+    captured_token_usage: dict[str, Any] | None = None
+    captured_model_name: str | None = None
 
     for update in graph.stream(
         initial_state,
@@ -124,6 +126,8 @@ def run_question(
         prepare = update.get("prepare") or {}
         if isinstance(prepare.get("question_parts"), list):
             question_parts = prepare["question_parts"]
+        if isinstance(prepare.get("model_route"), dict):
+            captured_model_name = prepare["model_route"].get("model_name")
 
         tools_update = update.get("tools") or {}
         messages = tools_update.get("messages") or []
@@ -136,6 +140,12 @@ def run_question(
                 tool_outputs.append(str(content))
 
         synthesis = update.get("synthesis") or {}
+        if synthesis:
+            if "token_usage" in synthesis and synthesis["token_usage"]:
+                captured_token_usage = synthesis["token_usage"]
+            elif isinstance(synthesis.get("final_answer"), dict):
+                captured_token_usage = synthesis["final_answer"].get("token_telemetry")
+
         final_dict = synthesis.get("final_answer")
         if final_dict:
             try:
@@ -153,7 +163,7 @@ def run_question(
                         parse_final_answer(raw, question_parts)
                     )
 
-    return answer, tools_called, tool_outputs
+    return answer, tools_called, tool_outputs, captured_token_usage, captured_model_name
 
 
 # ── Parametrized test ─────────────────────────────────────────────────────────
@@ -166,10 +176,28 @@ _results: list[ScoreResult] = []
 def _save_report_on_finish(settings):
     yield
     if _results:
-        md_path, json_path = save_report(_results, reports_dir="reports/eval")
+        md_path, json_path = save_report(
+            _results,
+            reports_dir="reports/eval",
+            model_name=settings.openrouter_model,
+        )
         print(f"\n\nEval report saved:\n  Markdown: {md_path}\n  JSON:     {json_path}")
         passed = sum(1 for r in _results if r.passed)
         print(f"Pass rate: {passed}/{len(_results)} = {passed/len(_results)*100:.1f}%")
+        tok_results = [r for r in _results if r.token_usage]
+        if tok_results:
+            tot_tokens = sum(r.token_usage.get("totals", {}).get("total_tokens", 0) for r in tok_results)
+            tot_cost = sum(r.token_usage.get("totals", {}).get("total_cost_usd", 0.0) for r in tok_results)
+            tcer_list = [
+                r.token_usage.get("kpis", {}).get("tcer", 0.0)
+                for r in tok_results
+                if "tcer" in r.token_usage.get("kpis", {})
+            ]
+            avg_tcer = sum(tcer_list) / len(tcer_list) if tcer_list else 0.0
+            print(
+                f"Token Consumption KPIs: Total Tokens: {tot_tokens:,} | Total Cost: ${tot_cost:.4f} | "
+                f"Avg TCER: {avg_tcer:.3f} (target <= 0.45)"
+            )
 
 
 @pytest.mark.parametrize(
@@ -198,15 +226,19 @@ def test_question(question_data, agent_graph, settings, active_judge):
     answer = ""
     tools_called: list[str] = []
     tool_outputs: list[str] = []
+    captured_token_usage: dict[str, Any] | None = None
+    captured_model_name: str | None = None
 
     try:
-        answer, tools_called, tool_outputs = run_question(
+        answer, tools_called, tool_outputs, captured_token_usage, captured_model_name = run_question(
             agent_graph, question, thread_id, user_role="engineer"
         )
     except Exception as exc:
         error = str(exc)[:200]
 
     latency = time.monotonic() - start
+
+    effective_model = captured_model_name or settings.openrouter_model
 
     result = score_answer(
         answer=answer,
@@ -221,14 +253,24 @@ def test_question(question_data, agent_graph, settings, active_judge):
         judge=active_judge,
         latency_s=latency,
         error=error,
+        token_usage=captured_token_usage,
+        model_name=effective_model,
     )
     _results.append(result)
 
+    tok_info = ""
+    if captured_token_usage:
+        tot_tok = captured_token_usage.get("totals", {}).get("total_tokens", 0)
+        tot_cost = captured_token_usage.get("totals", {}).get("total_cost_usd", 0.0)
+        tcer = captured_token_usage.get("kpis", {}).get("tcer", 0.0)
+        tok_info = f" | Tokens: {tot_tok:,} | Cost: ${tot_cost:.5f} | TCER: {tcer:.3f}"
+
     print(
         f"\n[{qid}] {question[:80]}\n"
+        f"  Model: {effective_model}\n"
         f"  Answer: {answer[:200]}\n"
         f"  Score: {result.overall_score:.3f} | Passed: {result.passed} "
-        f"| Latency: {latency:.2f}s | Tools: {tools_called}"
+        f"| Latency: {latency:.2f}s{tok_info} | Tools: {tools_called}"
     )
 
     # Soft assertion: warn on failure, don't hard-fail the test suite

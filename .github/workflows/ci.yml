@@ -25,10 +25,10 @@ jobs:
     # (has_doc_source failures). openai/text-embedding-3-small is stable on the
     # sync /embeddings endpoint (1536 dims, ~$0.02/M).
     env:
-      OPENROUTER_MODEL: google/gemini-2.5-flash-lite
-      RAG_TIER1_MODEL: google/gemini-2.5-flash-lite
-      RAG_TIER2_MODEL: google/gemini-2.5-flash-lite
-      RAG_TIER3_MODEL: google/gemini-2.5-flash-lite
+      OPENROUTER_MODEL: deepseek/deepseek-v4.1-flash
+      RAG_TIER1_MODEL: deepseek/deepseek-v4.1-flash
+      RAG_TIER2_MODEL: deepseek/deepseek-v4-flash-0731
+      RAG_TIER3_MODEL: deepseek/deepseek-pro-latest
       EMBEDDING_MODEL: openai/text-embedding-3-small
       EMBEDDING_STRATEGY: sequential
       HF_TOKEN: ${{ secrets.HF_TOKEN }}

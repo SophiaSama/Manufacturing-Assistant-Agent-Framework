@@ -226,3 +226,115 @@ def test_orchestrator_prepare_node_populates_model_route(monkeypatch):
     assert "model_route" in result
     assert result["model_route"]["choice"] == "fast"
     assert result["model_route"]["model_name"] == "anthropic/claude-haiku-4-5"
+
+
+# ── Token Consumption KPIs & Model Reporting Unit Tests ───────────────────────
+
+def test_build_summary_with_token_telemetry_and_model_name():
+    from nga.evaluation.report import save_report
+    from nga.rag_agent.jev_reasoning import calculate_reasoning_token_telemetry
+
+    tok1 = calculate_reasoning_token_telemetry(
+        llm_prompt_tokens=1500,
+        llm_completion_tokens=300,
+        jev_calls_count=2,
+        jev_input_tokens=600,
+        tool_rounds_executed=2,
+        early_exit_triggered=True,
+    )
+    tok2 = calculate_reasoning_token_telemetry(
+        llm_prompt_tokens=2000,
+        llm_completion_tokens=400,
+        jev_calls_count=1,
+        jev_input_tokens=400,
+        tool_rounds_executed=3,
+        early_exit_triggered=False,
+    )
+
+    r1 = _make_result(
+        question_id="Q1",
+        model_name="openai/gpt-4o",
+        token_usage=tok1,
+    )
+    r2 = _make_result(
+        question_id="Q2",
+        model_name="openai/gpt-4o",
+        token_usage=tok2,
+    )
+
+    summary = build_summary([r1, r2])
+    assert summary["model_name"] == "openai/gpt-4o"
+    assert "token_summary" in summary
+    ts = summary["token_summary"]
+    assert ts["total_tokens"] > 0
+    assert ts["avg_tcer"] > 0.0
+    assert ts["output_token_elimination_rate_pct"] == 100.0
+    assert ts["early_exit_rate_pct"] == 50.0  # 1 out of 2
+    assert ts["cost_per_1k_queries_usd"] > 0.0
+    assert "avg_prompt_tokens" in summary
+    assert "avg_completion_tokens" in summary
+
+
+def test_generate_markdown_report_includes_token_kpis_and_model():
+    from nga.rag_agent.jev_reasoning import calculate_reasoning_token_telemetry
+
+    tok = calculate_reasoning_token_telemetry(
+        llm_prompt_tokens=1200,
+        llm_completion_tokens=250,
+        jev_calls_count=2,
+        jev_input_tokens=500,
+        tool_rounds_executed=2,
+        early_exit_triggered=True,
+    )
+    r = _make_result(
+        question_id="Q10",
+        model_name="google/gemini-1.5-pro",
+        token_usage=tok,
+    )
+
+    md = generate_markdown_report([r], run_label="test-tok-run", model_name="google/gemini-1.5-pro")
+    assert "google/gemini-1.5-pro" in md
+    assert "Token Consumption & Cost Efficiency KPIs (Jev vs. Fallback)" in md
+    assert "Token Consumption Efficiency Ratio (TCER)" in md
+    assert "Zero Jev output tokens" in md
+    assert "Tokens" in md
+    assert "TCER" in md
+
+
+def test_save_report_persists_model_and_token_summary(tmp_path):
+    import json
+    from nga.evaluation.report import save_report
+    from nga.rag_agent.jev_reasoning import calculate_reasoning_token_telemetry
+
+    tok = calculate_reasoning_token_telemetry(
+        llm_prompt_tokens=1200,
+        llm_completion_tokens=250,
+        jev_calls_count=2,
+        jev_input_tokens=500,
+        tool_rounds_executed=2,
+        early_exit_triggered=True,
+    )
+    r = _make_result(
+        question_id="Q20",
+        model_name="anthropic/claude-3.5-sonnet",
+        token_usage=tok,
+    )
+
+    md_path, json_path = save_report(
+        [r],
+        reports_dir=str(tmp_path),
+        run_label="save-test",
+        model_name="anthropic/claude-3.5-sonnet",
+    )
+
+    assert md_path.exists()
+    assert json_path.exists()
+
+    with open(json_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data["model_name"] == "anthropic/claude-3.5-sonnet"
+    assert data["token_summary"] is not None
+    assert data["token_summary"]["total_tokens"] > 0
+    assert data["results"][0]["token_usage"] is not None
+    assert data["results"][0]["model_name"] == "anthropic/claude-3.5-sonnet"

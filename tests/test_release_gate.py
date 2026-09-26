@@ -86,3 +86,22 @@ def test_release_gate_rejected_on_safety_failure(passing_baseline_and_candidate)
     assert res.status == "REJECTED"
     assert any("Class A" in reason for reason in res.reasons)
     assert res.rollback_recommended
+
+
+def test_release_gate_evaluates_tcer_target(passing_baseline_and_candidate):
+    baseline, candidate = passing_baseline_and_candidate
+    candidate["token_summary"] = {"avg_tcer": 0.38}
+    res = evaluate_release_gate(baseline, candidate)
+    assert res.status == "APPROVED"
+    assert "token_efficiency_tcer" in res.criteria_results
+    assert res.criteria_results["token_efficiency_tcer"]["passed"] is True
+
+
+def test_release_gate_rejects_on_tcer_exceeded(passing_baseline_and_candidate):
+    baseline, candidate = passing_baseline_and_candidate
+    candidate["token_summary"] = {"avg_tcer": 0.65}
+    res = evaluate_release_gate(baseline, candidate)
+    assert res.status == "REJECTED"
+    assert "token_efficiency_tcer" in res.criteria_results
+    assert res.criteria_results["token_efficiency_tcer"]["passed"] is False
+    assert any("TCER" in r for r in res.reasons)

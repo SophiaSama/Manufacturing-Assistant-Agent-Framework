@@ -1063,6 +1063,36 @@
     const passRatePct = ((summary.pass_rate || 0) * 100).toFixed(1);
     const passClass = summary.pass_rate >= 0.7 ? "delta-pos" : "delta-neg";
 
+    const tok = summary.token_summary;
+    let tokCardsHtml = "";
+    if (tok) {
+      const tcerClass = tok.meets_tcer_target ? "delta-pos" : "delta-neg";
+      tokCardsHtml = `
+        <div style="grid-column: 1 / -1; margin-top: 0.5rem; background: rgba(56, 189, 248, 0.06); border: 1px solid rgba(56, 189, 248, 0.2); border-radius: 8px; padding: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+          <div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Avg TCER (Efficiency)</div>
+            <div class="${tcerClass}" style="font-size: 1.25rem; font-weight: 700;">${(tok.avg_tcer || 0).toFixed(3)}</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Target ≤ 0.450</div>
+          </div>
+          <div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Avg Tokens / Query</div>
+            <div style="font-size: 1.25rem; font-weight: 700;">${(tok.avg_tokens_per_query || 0).toLocaleString()}</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">Cost: $${(tok.avg_cost_per_query_usd || 0).toFixed(5)}/Q</div>
+          </div>
+          <div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Net Cost Savings</div>
+            <div class="delta-pos" style="font-size: 1.25rem; font-weight: 700;">${(tok.avg_cost_savings_pct || 0).toFixed(1)}%</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">vs Fallback</div>
+          </div>
+          <div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase;">Zero Output Tokens (Jev)</div>
+            <div class="delta-pos" style="font-size: 1.25rem; font-weight: 700;">100%</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted);">${(tok.early_exit_rate_pct || 0).toFixed(1)}% Early Exit</div>
+          </div>
+        </div>
+      `;
+    }
+
     els.evalMetricCards.innerHTML = `
       <div class="metric-card">
         <span class="metric-card-label">Pass Rate</span>
@@ -1084,6 +1114,7 @@
         <span class="metric-card-value">${summary.total || 0}</span>
         <span class="metric-card-delta">Run: ${escapeHTML(summary.run_label || "eval")}</span>
       </div>
+      ${tokCardsHtml}
     `;
 
     const tbody = els.evalCategoryTable.querySelector("tbody");
@@ -1102,9 +1133,10 @@
       )
       .join("");
 
+    const modelTag = summary.model_name ? `<span style="margin-right: 1.2rem;">Model: <strong style="color: var(--color-primary);">${escapeHTML(summary.model_name)}</strong></span>` : "";
     els.evalReportMeta.innerHTML = `
-      <div style="font-size: 0.8rem; color: var(--text-muted);">
-        Markdown report saved to: <code>${escapeHTML(summary.md_report_path || "")}</code>
+      <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div>${modelTag}Markdown report: <code>${escapeHTML(summary.md_report_path || "")}</code></div>
       </div>
     `;
   }
@@ -1194,6 +1226,19 @@
     const scoreClass = scoreDelta > 0 ? "delta-pos" : scoreDelta < 0 ? "delta-neg" : "delta-neu";
     const latClass = latDelta < 0 ? "delta-pos" : latDelta > 0 ? "delta-neg" : "delta-neu";
 
+    let tokDeltaCard = "";
+    if (sd.tcer) {
+      const tcerD = sd.tcer.delta || 0;
+      const tcerClass = tcerD <= 0 ? "delta-pos" : "delta-neg";
+      tokDeltaCard = `
+        <div class="metric-card">
+          <span class="metric-card-label">TCER Efficiency Delta</span>
+          <span class="metric-card-value ${tcerClass}">${tcerD > 0 ? "+" : ""}${tcerD.toFixed(3)}</span>
+          <span class="metric-card-delta">${(sd.tcer.a || 0).toFixed(3)} (A) → ${(sd.tcer.b || 0).toFixed(3)} (B)</span>
+        </div>
+      `;
+    }
+
     // 1. Metric Delta Cards
     els.compareDeltaCards.innerHTML = `
       <div class="metric-card">
@@ -1216,6 +1261,7 @@
         <span class="metric-card-value">${sd.passed_questions?.delta > 0 ? "+" : ""}${sd.passed_questions?.delta || 0}</span>
         <span class="metric-card-delta">${sd.passed_questions?.a} → ${sd.passed_questions?.b}</span>
       </div>
+      ${tokDeltaCard}
     `;
 
     // 2. Transition Pills

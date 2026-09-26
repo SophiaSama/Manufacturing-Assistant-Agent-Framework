@@ -158,6 +158,9 @@ def record_eval_run(
     passed = int(summary.get("passed", 0))
 
     # Calculate delta against the previous recorded run
+    token_summary = report_data.get("token_summary") or summary.get("token_summary")
+    model_name = report_data.get("model_name") or summary.get("model_name")
+
     delta: dict[str, Any] = {
         "pass_rate_delta": 0.0,
         "score_delta": 0.0,
@@ -179,10 +182,15 @@ def record_eval_run(
             "previous_commit": prev.get("commit_sha", "")[:7],
             "previous_run_label": prev.get("run_label", ""),
         }
+        prev_tok = prev.get("token_summary") or prev_sum.get("token_summary") or {}
+        if prev_tok and token_summary:
+            delta["tcer_delta"] = round(float(token_summary.get("avg_tcer", 0.0)) - float(prev_tok.get("avg_tcer", 0.0)), 3)
+            delta["cost_per_query_delta"] = round(float(token_summary.get("avg_cost_per_query_usd", 0.0)) - float(prev_tok.get("avg_cost_per_query_usd", 0.0)), 6)
 
     entry = {
         "id": f"eval_{git_meta['short_sha']}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         "run_label": run_label,
+        "model_name": model_name,
         "timestamp": git_meta["timestamp"],
         "commit_sha": git_meta["commit_sha"],
         "short_sha": git_meta["short_sha"],
@@ -191,12 +199,15 @@ def record_eval_run(
         "commit_message": git_meta["commit_message"],
         "ci_passed": pass_rate >= threshold,
         "threshold": threshold,
+        "token_summary": token_summary,
         "summary": {
             "total": total,
             "passed": passed,
             "pass_rate": pass_rate,
             "avg_score": avg_score,
             "avg_latency_s": avg_latency,
+            "model_name": model_name,
+            "token_summary": token_summary,
             "by_category": summary.get("by_category", []),
             "by_tier": summary.get("by_tier", []),
             "grounding": summary.get("grounding"),
