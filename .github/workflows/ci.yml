@@ -19,11 +19,19 @@ jobs:
     # because worst-case 64k output exceeds the balance. gemini-2.5-flash-lite
     # costs ~$0.20/M out, supports function calling, and passes the affordability
     # gate (~$0.026 worst case vs the key's balance).
+    #
+    # Embeddings: qwen/qwen3-embedding-4b flaps to a batch-only endpoint, so sync
+    # query embeddings intermittently 404 and retrieval silently returns nothing
+    # (has_doc_source failures). openai/text-embedding-3-small is stable on the
+    # sync /embeddings endpoint (1536 dims, ~$0.02/M).
     env:
-      OPENROUTER_MODEL: google/gemini-2.5-flash-lite
-      RAG_TIER1_MODEL: google/gemini-2.5-flash-lite
-      RAG_TIER2_MODEL: google/gemini-2.5-flash-lite
-      RAG_TIER3_MODEL: google/gemini-2.5-flash-lite
+      OPENROUTER_MODEL: deepseek/deepseek-v4.1-flash
+      RAG_TIER1_MODEL: deepseek/deepseek-v4.1-flash
+      RAG_TIER2_MODEL: deepseek/deepseek-v4-flash-0731
+      RAG_TIER3_MODEL: deepseek/deepseek-v4-pro
+      EMBEDDING_MODEL: openai/text-embedding-3-small
+      EMBEDDING_STRATEGY: sequential
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
     steps:
       - name: Checkout repository
@@ -45,10 +53,17 @@ jobs:
       - name: Run code formatting and linting
         run: uv run ruff check .
 
-      - name: Run unit, API & stress test suites
+      - name: Run unit test suite
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
-        run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py -v
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-moc...r-ci' }}
+          TYPESAFE_API_TEST: ${{ secrets.TYPESAFE_API_TEST || secrets.TYPESAFE_API_KEY }}
+        run: uv run pytest tests/unit/ -v
+
+      - name: Run integration & stress test suites
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-moc...r-ci' }}
+          TYPESAFE_API_TEST: ${{ secrets.TYPESAFE_API_TEST || secrets.TYPESAFE_API_KEY }}
+        run: uv run pytest tests/integration/test_ui_api.py tests/integration/test_stress.py -v
 
       # CI runners start from a fresh checkout where data/ (vector store, graph
       # store) is gitignored and therefore absent. Without an ingested corpus the
@@ -61,13 +76,13 @@ jobs:
       # (submit + poll) and keeps this step deterministic.
       - name: Build retrieval corpus for evaluation
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-moc...r-ci' }}
           EMBEDDING_STRATEGY: sequential
         run: uv run python -m nga.ingestion.build_vector_store --profile main
 
       - name: Execute Evaluation Benchmark Suite
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-moc...r-ci' }}
           EMBEDDING_STRATEGY: sequential
         run: |
           # Run benchmark smoke evaluation across categories
@@ -107,7 +122,7 @@ jobs:
         with:
           name: nga-evaluation-history
           path: |
-            reports/eval/*.json
-            reports/eval/*.md
-            reports/eval/*.svg
+            reports/**/*.json
+            reports/**/*.md
+            reports/**/*.svg
           retention-days: 30
