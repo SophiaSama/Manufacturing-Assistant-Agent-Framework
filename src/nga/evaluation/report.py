@@ -3,11 +3,53 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from nga.evaluation.scoring import ScoreResult
+
+
+def sanitize_model_name(model_name: str) -> str:
+    """Convert model name (e.g. 'deepseek/deepseek-v4-pro') to filename-safe slug."""
+    if not model_name:
+        return "unknown_model"
+    clean = model_name.replace("/", "_").replace(":", "_")
+    clean = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", clean)
+    clean = re.sub(r"_+", "_", clean).strip("_")
+    return clean or "unknown_model"
+
+
+def format_report_label(
+    date_str: str | None = None,
+    model_name: str | None = None,
+    run_label: str = "",
+) -> str:
+    """Generate standardized report label: {date}_{model}_{identifier}.
+    
+    If run_label is empty, uses timestamp. If run_label is given, incorporates
+    date and model slug to ensure consistent searchable organization.
+    """
+    now = datetime.now(timezone.utc)
+    d = date_str or now.strftime("%Y%m%d")
+    t = now.strftime("%H%M%S")
+    model_slug = sanitize_model_name(model_name or "")
+
+    if not run_label:
+        return f"{d}_{model_slug}_{t}"
+
+    # If run_label already contains both date and model_slug, avoid duplication
+    if d in run_label and model_slug in run_label:
+        return run_label
+
+    # If run_label matches a raw timestamp like 20260927_101500 or eval_20260927_101500
+    m = re.match(r"^(?:eval_)?(\d{8})_(\d{6})$", run_label)
+    if m:
+        extracted_d, extracted_t = m.groups()
+        return f"{extracted_d}_{model_slug}_{extracted_t}"
+
+    return f"{d}_{model_slug}_{run_label}"
 
 
 def _now_ts() -> str:
@@ -150,6 +192,46 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
             "net_savings_per_1k_usd": round(max(0.0, fallback_cost_per_1k - cost_per_1k), 4),
         }
 
+    # Jev Judge Multi-Criteria Diagnostics aggregation (Parallel Questions Rubric)
+    judge_diag_results = [
+        r for r in results if getattr(r, "judge_diagnostics", None) is not None
+    ]
+    judge_summary: dict[str, Any] | None = None
+    if judge_diag_results:
+        faith_list = [
+            r.judge_diagnostics["is_faithful"]
+            for r in judge_diag_results
+            if r.judge_diagnostics.get("is_faithful") is not None
+        ]
+        specs_list = [
+            r.judge_diagnostics["specs_accurate"]
+            for r in judge_diag_results
+            if r.judge_diagnostics.get("specs_accurate") is not None
+        ]
+        comp_list = [
+            r.judge_diagnostics["completeness"]
+            for r in judge_diag_results
+            if r.judge_diagnostics.get("completeness") is not None
+        ]
+        lat_list = [
+            r.judge_diagnostics["latency_ms"]
+            for r in judge_diag_results
+            if r.judge_diagnostics.get("latency_ms") is not None
+        ]
+        failure_counts: dict[str, int] = {}
+        for r in judge_diag_results:
+            fm = r.judge_diagnostics.get("failure_mode") or "none"
+            failure_counts[fm] = failure_counts.get(fm, 0) + 1
+
+        judge_summary = {
+            "total_judged": len(judge_diag_results),
+            "avg_faithfulness": round(sum(faith_list) / len(faith_list), 3) if faith_list else 1.0,
+            "avg_specs_accuracy": round(sum(specs_list) / len(specs_list), 3) if specs_list else 1.0,
+            "avg_completeness": round(sum(comp_list) / len(comp_list), 3) if comp_list else 1.0,
+            "avg_judge_latency_ms": round(sum(lat_list) / len(lat_list), 1) if lat_list else 0.0,
+            "failure_mode_counts": failure_counts,
+        }
+
     summary_dict: dict[str, Any] = {
         "total": total,
         "passed": passed,
@@ -162,6 +244,7 @@ def build_summary(results: list[ScoreResult]) -> dict[str, Any]:
         "stepped_summary": stepped_sum,
         "grounding": grounding_summary,
         "token_summary": token_summary,
+        "judge_summary": judge_summary,
     }
 
     if token_summary:
@@ -214,6 +297,24 @@ def generate_markdown_report(
         lines.append(f"| **Net Cost Savings vs Fallback** | **{tok['avg_cost_savings_pct']:.1f}%** | Up to 70% | ✅ |")
         lines.append(f"| **Net Token Savings vs Fallback** | {tok['avg_token_savings_pct']:.1f}% | — | ℹ️ |")
         lines.append(f"| **Tool-Loop Early Exit Rate** | {tok['early_exit_rate_pct']:.1f}% | Eliminates redundant tool loops | ⚡ |")
+
+    # Jev Judge Multi-Criteria Diagnostics (System One Parallel Rubric)
+    jd = summary.get("judge_summary")
+    if jd:
+        lines.append("\n## Jev Judge Multi-Criteria Diagnostics (System One Parallel Rubric)\n")
+        lines.append("| Diagnostic Dimension | Average Value | Description |")
+        lines.append("|---|---|---|")
+        lines.append(f"| **Faithfulness Probability** | **{jd['avg_faithfulness']*100:.1f}%** | Zero hallucinated specs, values, or non-existent documents |")
+        lines.append(f"| **Specification Accuracy** | **{jd['avg_specs_accuracy']*100:.1f}%** | Numerical figures, torque specs, and tolerances match reference |")
+        lines.append(f"| **Procedural Completeness** | **{jd['avg_completeness']*100:.1f}%** | All core questions, steps, and prerequisites covered |")
+        lines.append(f"| **Avg Judge Latency** | **{jd['avg_judge_latency_ms']:.1f}ms** | Sub-50ms TypeSafe System One round-trip |")
+        if jd.get("failure_mode_counts"):
+            lines.append("\n### Diagnostic Failure Mode Breakdown\n")
+            lines.append("| Failure Mode | Count | % of Evaluated |")
+            lines.append("|---|---|---|")
+            for fm, count in sorted(jd["failure_mode_counts"].items(), key=lambda x: x[1], reverse=True):
+                pct = (count / jd["total_judged"]) * 100
+                lines.append(f"| `{fm}` | {count} | {pct:.1f}% |")
 
     lines.append("\n## Results by Stepped Tier (L1–L4)\n")
     lines.append("| Tier | Total | Passed | Pass Rate | Avg Score | Avg Latency | Meets Target |")
@@ -286,15 +387,15 @@ def save_report(
     cache_mode: str = "cold",
     cache_summary: dict | None = None,
     model_name: str | None = None,
+    execution_date: str | None = None,
 ) -> tuple[Path, Path]:
-    """Save Markdown report to disk. Returns (md_path, json_path)."""
-    ts = _now_ts()
-    label = run_label or ts
-    out_dir = Path(reports_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
+    """Save Markdown and JSON reports to disk named by date, model, and run identifier."""
     summary = build_summary(results)
     eff_model = model_name or summary.get("model_name") or "anthropic/claude-sonnet-4-5"
+    label = format_report_label(date_str=execution_date, model_name=eff_model, run_label=run_label)
+
+    out_dir = Path(reports_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     md_content = generate_markdown_report(results, label, cache_mode=cache_mode, model_name=eff_model)
     md_path = out_dir / f"{label}.md"
@@ -304,9 +405,11 @@ def save_report(
     json_path = out_dir / f"{label}.json"
     json_data = {
         "run_label": label,
+        "execution_date": execution_date or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "model_name": eff_model,
         "cache_mode": cache_mode,
         "summary": summary,
+        "judge_summary": summary.get("judge_summary"),
         "token_summary": summary.get("token_summary"),
         "stepped_summary": summary.get("stepped_summary"),
         "cache": cache_summary,
@@ -326,6 +429,7 @@ def save_report(
                 "cache_stats": r.cache_stats,
                 "token_usage": getattr(r, "token_usage", None),
                 "model_name": getattr(r, "model_name", None) or eff_model,
+                "judge_diagnostics": getattr(r, "judge_diagnostics", None),
             }
             for r in results
         ],

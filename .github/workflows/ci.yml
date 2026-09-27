@@ -53,11 +53,17 @@ jobs:
       - name: Run code formatting and linting
         run: uv run ruff check .
 
-      - name: Run unit, API & stress test suites
+      - name: Run unit test suite
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
           TYPESAFE_API_TEST: ${{ secrets.TYPESAFE_API_TEST || secrets.TYPESAFE_API_KEY }}
-        run: uv run pytest tests/test_ui_api.py tests/integration/test_stress.py tests/test_entity_alignment.py -v
+        run: uv run pytest tests/unit/ -v
+
+      - name: Run integration & stress test suites
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPEN_ROUTER_API_KEY || 'sk-mock-key-for-ci' }}
+          TYPESAFE_API_TEST: ${{ secrets.TYPESAFE_API_TEST || secrets.TYPESAFE_API_KEY }}
+        run: uv run pytest tests/integration/test_ui_api.py tests/integration/test_stress.py -v
 
       # CI runners start from a fresh checkout where data/ (vector store, graph
       # store) is gitignored and therefore absent. Without an ingested corpus the
@@ -116,7 +122,7 @@ jobs:
         with:
           name: nga-evaluation-history
           path: |
-            reports/eval/*.json
-            reports/eval/*.md
-            reports/eval/*.svg
+            reports/**/*.json
+            reports/**/*.md
+            reports/**/*.svg
           retention-days: 30

@@ -131,11 +131,12 @@ CONFLICT_SCENARIOS = [
 ]
 
 
-def main():
+def main(limit: int | None = None):
     import argparse
     parser = argparse.ArgumentParser(description="Full suite judge comparison benchmark.")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of benchmark questions to evaluate")
     args, _ = parser.parse_known_args()
+    eff_limit = limit if limit is not None else args.limit
 
     print("=" * 80)
     print("NGA MANUFACTURING ASSISTANT — FULL SUITE JUDGE BENCHMARK")
@@ -146,8 +147,8 @@ def main():
         data = json.load(f)
 
     questions: List[Dict[str, Any]] = data["questions"]
-    if args.limit and args.limit > 0:
-        questions = questions[:args.limit]
+    if eff_limit and eff_limit > 0:
+        questions = questions[:eff_limit]
     print(f"Loaded {len(questions)} evaluation benchmark questions.")
 
     llm_judge = make_llm_judge()
@@ -226,6 +227,8 @@ def main():
             "llm_lat": llm_lat,
             "jev_lat": jev_lat,
             "jev_faithful": jev_diag["is_faithful"],
+            "jev_specs_accurate": jev_diag.get("specs_accurate", 1.0),
+            "jev_failure_mode": jev_diag.get("failure_mode", "none"),
             "llm_neg_score": llm_neg_score,
             "jev_neg_score": jev_neg_score,
         })
@@ -288,9 +291,14 @@ def main():
             print(f"  [{sid}] {sname[:26]:<26} | {cond_name:<20} | LLM: {llm_s} | Jev: {jev_s} ({prob_str})")
 
     # Save Markdown report
-    report_path = Path(__file__).resolve().parents[1] / "reports" / "eval" / "full_suite_judge_comparison.md"
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    model_slug = "typesafe_jev"
+    judge_dir = Path(__file__).resolve().parents[1] / "reports" / "judge" / date_str
+    judge_dir.mkdir(parents=True, exist_ok=True)
+    report_path = judge_dir / f"{model_slug}_full_suite_judge_comparison.md"
+    legacy_md = Path(__file__).resolve().parents[1] / "reports" / "eval" / "full_suite_judge_comparison.md"
+    legacy_md.parent.mkdir(parents=True, exist_ok=True)
+
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Full-Suite Evaluation: TypeSafe Jev Judge vs. LLM-as-a-Judge\n\n")
         f.write(f"**Total Questions:** {n} (from `eval-questions/questions.json`) + 8 Cross-Document Contradiction Scenarios\n\n")
@@ -341,10 +349,13 @@ def main():
 
             f.write(f"| {cr['id']} | {cr['name']} | `{cond}` | {llm_s}/5 | {jev_s}/5 | {ast_status} | {judge_verdict} | {cr['jev_prob_str']} |\n")
 
+    # Copy to legacy path
+    legacy_md.write_text(report_path.read_text(encoding="utf-8"), encoding="utf-8")
     print(f"\nFull report saved to: {report_path}")
 
     # Save JSON report for A/B studio and CI trends tracking
     json_path = report_path.with_suffix(".json")
+    legacy_json = legacy_md.with_suffix(".json")
     json_payload = {
         "run_label": "full_suite_judge_comparison",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -405,6 +416,7 @@ def main():
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(json_payload, f, indent=2)
+    legacy_json.write_text(json_path.read_text(encoding="utf-8"), encoding="utf-8")
     print(f"JSON benchmark report saved to: {json_path}")
 
     # Record to historical ledger for CI trend tracking

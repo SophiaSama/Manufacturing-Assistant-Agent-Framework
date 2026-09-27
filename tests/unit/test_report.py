@@ -329,12 +329,43 @@ def test_save_report_persists_model_and_token_summary(tmp_path):
 
     assert md_path.exists()
     assert json_path.exists()
+    # Verify report filename is based on date and model used
+    assert "anthropic_claude-3.5-sonnet" in md_path.name
+    assert "save-test" in md_path.name
 
     with open(json_path, encoding="utf-8") as f:
         data = json.load(f)
 
     assert data["model_name"] == "anthropic/claude-3.5-sonnet"
+    assert data["execution_date"] is not None
+    assert "anthropic_claude-3.5-sonnet" in data["run_label"]
     assert data["token_summary"] is not None
     assert data["token_summary"]["total_tokens"] > 0
     assert data["results"][0]["token_usage"] is not None
     assert data["results"][0]["model_name"] == "anthropic/claude-3.5-sonnet"
+
+
+def test_format_report_label():
+    from nga.evaluation.report import format_report_label, sanitize_model_name
+
+    assert sanitize_model_name("deepseek/deepseek-v4-pro") == "deepseek_deepseek-v4-pro"
+    assert sanitize_model_name("openai/gpt-4o:latest") == "openai_gpt-4o_latest"
+
+    # Default without run_label: YYYYMMDD_model_HHMMSS
+    label = format_report_label(date_str="20260927", model_name="deepseek/deepseek-v4-pro")
+    assert label.startswith("20260927_deepseek_deepseek-v4-pro_")
+
+    # With run_label: YYYYMMDD_model_run_label
+    label_custom = format_report_label(
+        date_str="20260927",
+        model_name="deepseek/deepseek-v4-pro",
+        run_label="ci_abc123",
+    )
+    assert label_custom == "20260927_deepseek_deepseek-v4-pro_ci_abc123"
+
+    # With timestamp run_label: transforms to YYYYMMDD_model_HHMMSS
+    label_ts = format_report_label(
+        model_name="anthropic/claude-3.5-sonnet",
+        run_label="20260927_101500",
+    )
+    assert label_ts == "20260927_anthropic_claude-3.5-sonnet_101500"
