@@ -9,11 +9,103 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+
+class JudgeAPIError(RuntimeError):
+    """Base exception raised when an evaluation judge cannot evaluate due to an upstream API error."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        original_error: Exception | None = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.original_error = original_error
+
+
+class LLMJudgeAPIError(JudgeAPIError):
+    """Raised when the LLM judge cannot evaluate due to an upstream API error (400, 403, quota, etc.)."""
+
+
+class JevJudgeAPIError(JudgeAPIError):
+    """Raised when the Jev judge cannot evaluate due to an upstream API error (missing key, 401, 403, quota, etc.)."""
+
+
+def is_api_error(exc: Exception) -> tuple[bool, int | None, str]:
+    """Check if an exception represents an upstream API / quota / client HTTP error (400, 403, 429, etc.).
+
+    Returns:
+        (is_api_err, status_code, error_message)
+    """
+    candidates = [exc]
+    if getattr(exc, "__cause__", None) is not None:
+        candidates.append(exc.__cause__)
+    if getattr(exc, "__context__", None) is not None:
+        candidates.append(exc.__context__)
+    if hasattr(exc, "original_error") and exc.original_error is not None:
+        candidates.append(exc.original_error)
+
+    for cand in candidates:
+        if isinstance(cand, JudgeAPIError):
+            return True, cand.status_code, str(cand)
+
+        # Check status_code or code attributes
+        status_code = getattr(cand, "status_code", None)
+        if status_code is None:
+            code_attr = getattr(cand, "code", None)
+            if isinstance(code_attr, int):
+                status_code = code_attr
+
+        response = getattr(cand, "response", None)
+        if status_code is None and response is not None:
+            status_code = getattr(response, "status_code", None)
+
+        if status_code is not None and (400 <= status_code < 600):
+            return True, status_code, str(cand)
+
+        try:
+            import openai
+
+            if isinstance(cand, (openai.APIStatusError, openai.APIConnectionError, openai.APIError)):
+                code = getattr(cand, "status_code", None)
+                return True, code, str(cand)
+        except ImportError:
+            pass
+
+        try:
+            import httpx
+
+            if isinstance(cand, (httpx.HTTPStatusError, httpx.RequestError)):
+                code = getattr(getattr(cand, "response", None), "status_code", None)
+                return True, code, str(cand)
+        except ImportError:
+            pass
+
+        msg = str(cand)
+        lower = msg.lower()
+        api_patterns = [
+            "400", "401", "402", "403", "404", "429", "500", "502", "503", "504",
+            "key limit exceeded", "quota exceeded", "rate limit", "credit limit",
+            "insufficient_quota", "permission denied", "permissiondenied",
+            "unauthorized", "bad request", "badrequest", "invalid api key",
+            "api key not found", "model not found", "service unavailable",
+            "typesafe_api_key", "typesafe api key", "forbidden", "authentication",
+        ]
+        if any(p in lower for p in api_patterns):
+            match = re.search(r"\b(4\d{2}|5\d{2})\b", msg)
+            extracted = int(match.group(1)) if match else None
+            return True, extracted, msg
+
+    return False, None, str(exc)
+
 
 # Rubric definitions for manufacturing domain evaluation (0–5)
 MANUFACTURING_JUDGE_CRITERIA = [
@@ -97,12 +189,19 @@ def make_jev_judge(
     client: Any | None = None,
     use_rounding: bool = True,
     apply_safety_gating: bool = True,
+    raise_on_api_error: bool = True,
 ) -> Callable[[str, str], int]:
     """Create a Jev-powered judge that returns a JevScore (int subclass with diagnostics).
 
     Compatible with existing `judge: Callable[[str, str], int]` signatures in scoring.py.
     """
     if client is None:
+        api_key = (os.getenv("TYPESAFE_API_KEY") or "").strip()
+        if not api_key:
+            err_msg = "TYPESAFE_API_KEY is not set or empty. Jev judge evaluation cannot proceed."
+            logger.error(err_msg)
+            if raise_on_api_error:
+                raise JevJudgeAPIError(err_msg, status_code=401)
         from typesafe_sdk import TypeSafeClient
 
         client = TypeSafeClient()
@@ -115,12 +214,23 @@ def make_jev_judge(
                 client=client,
                 apply_safety_gating=apply_safety_gating,
                 use_rounding=use_rounding,
+                raise_on_api_error=raise_on_api_error,
             )
             return JevScore(diag.score_int, diagnostics=diag)
         except Exception as e:
-            logger.warning(f"Jev judge evaluation failed: {e}")
+            is_err, status_code, msg = is_api_error(e)
+            if is_err:
+                logger.error("Jev judge API error (status=%s): %s", status_code, msg)
+                if raise_on_api_error:
+                    raise JevJudgeAPIError(
+                        f"Jev judge API error (status={status_code}): {msg}",
+                        status_code=status_code,
+                        original_error=e,
+                    ) from e
+            logger.warning("Jev judge evaluation failed: %s", e)
             return JevScore(0, diagnostics=None)
 
+    judge.model_name = os.getenv("RERANK_MODEL", "jev-latest")
     return judge
 
 
@@ -130,6 +240,7 @@ def evaluate_with_jev(
     client: Any | None = None,
     apply_safety_gating: bool = True,
     use_rounding: bool = True,
+    raise_on_api_error: bool = True,
 ) -> JevEvaluationResult:
     """Full diagnostic evaluation using TypeSafe parallel questions fan-out.
 
@@ -141,6 +252,12 @@ def evaluate_with_jev(
     5. failure_mode: Choice classification of root-cause defect
     """
     if client is None:
+        api_key = (os.getenv("TYPESAFE_API_KEY") or "").strip()
+        if not api_key:
+            err_msg = "TYPESAFE_API_KEY is not set or empty. Jev judge evaluation cannot proceed."
+            logger.error(err_msg)
+            if raise_on_api_error:
+                raise JevJudgeAPIError(err_msg, status_code=401)
         from typesafe_sdk import TypeSafeClient
 
         client = TypeSafeClient()
@@ -169,7 +286,19 @@ def evaluate_with_jev(
     }
 
     t0 = time.perf_counter()
-    res = client.system_one(state=state, questions=questions)
+    try:
+        res = client.system_one(state=state, questions=questions)
+    except Exception as e:
+        is_err, status_code, msg = is_api_error(e)
+        if is_err:
+            logger.error("Jev evaluation API error (status=%s): %s", status_code, msg)
+            if raise_on_api_error:
+                raise JevJudgeAPIError(
+                    f"Jev evaluation API error (status={status_code}): {msg}",
+                    status_code=status_code,
+                    original_error=e,
+                ) from e
+        raise
     latency_ms = (time.perf_counter() - t0) * 1000
 
     answers = getattr(res, "answers", {})
@@ -225,17 +354,22 @@ def evaluate_with_jev(
     )
 
 
-def make_llm_judge(settings: Any | None = None) -> Callable[[str, str], int]:
+def make_llm_judge(
+    settings: Any | None = None,
+    llm: Any | None = None,
+    raise_on_api_error: bool = True,
+) -> Callable[[str, str], int]:
     """Create a classical generative LLM-as-a-judge returning 0–5."""
-    if settings is None:
-        from nga.config import Settings
-        settings = Settings.from_env()
+    if llm is None:
+        if settings is None:
+            from nga.config import Settings
+            settings = Settings.from_env()
+
+        from nga.providers.factory import make_chat_model
+
+        llm = make_chat_model(settings)
 
     from langchain_core.messages import HumanMessage
-
-    from nga.providers.factory import make_chat_model
-
-    llm = make_chat_model(settings)
 
     def judge(candidate: str, golden: str) -> int:
         prompt = (
@@ -249,12 +383,32 @@ def make_llm_judge(settings: Any | None = None) -> Callable[[str, str], int]:
         )
         try:
             response = llm.invoke([HumanMessage(content=prompt)])
+        except Exception as e:
+            is_err, status_code, msg = is_api_error(e)
+            if is_err:
+                logger.error("LLM judge API error (status=%s): %s", status_code, msg)
+                if raise_on_api_error:
+                    raise LLMJudgeAPIError(
+                        f"LLM judge API error (status={status_code}): {msg}",
+                        status_code=status_code,
+                        original_error=e,
+                    ) from e
+            logger.warning("LLM judge evaluation failed: %s", e)
+            return 0
+
+        try:
             content = response.content if hasattr(response, "content") else str(response)
             return max(0, min(5, int(content.strip().split()[0])))
         except Exception as e:
-            logger.warning(f"LLM judge evaluation failed: {e}")
+            logger.warning("LLM judge parsing failed: %s", e)
             return 0
 
+    judge.model_name = (
+        getattr(llm, "model_name", None)
+        or getattr(llm, "model", None)
+        or (getattr(settings, "openrouter_model", None) if settings else None)
+        or os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4.1-flash")
+    )
     return judge
 
 

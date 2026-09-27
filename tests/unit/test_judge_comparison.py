@@ -6,9 +6,19 @@ import os
 from typing import Any
 
 import pytest
+from unittest.mock import MagicMock
+
 from dotenv import load_dotenv
 
-from nga.evaluation.judge import evaluate_with_jev, make_jev_judge
+from nga.evaluation.judge import (
+    JevJudgeAPIError,
+    JudgeAPIError,
+    LLMJudgeAPIError,
+    evaluate_with_jev,
+    is_api_error,
+    make_jev_judge,
+    make_llm_judge,
+)
 
 load_dotenv()
 
@@ -207,3 +217,169 @@ def test_jev_judge_contradiction_hallucinated_average_penalized():
     jev_judge = make_jev_judge()
     score = jev_judge(candidate, golden)
     assert score <= 1, f"Expected near-zero score for hallucinated middle ground, got {score}"
+
+
+def test_is_api_error_detection():
+    """Verify is_api_error correctly identifies 400, 403, quota, and client errors."""
+    # 403 key limit exceeded
+    err_403 = Exception("Error code: 403 - {'error': {'message': 'Key limit exceeded (weekly limit).', 'code': 403}}")
+    is_err, code, msg = is_api_error(err_403)
+    assert is_err is True
+    assert code == 403
+
+    # 400 bad request
+    err_400 = Exception("Error code: 400 - deepseek is not a valid model ID")
+    is_err, code, msg = is_api_error(err_400)
+    assert is_err is True
+    assert code == 400
+
+    # Custom object with status_code attribute
+    class CustomHTTPError(Exception):
+        status_code = 429
+
+    err_429 = CustomHTTPError("Rate limit reached")
+    is_err, code, msg = is_api_error(err_429)
+    assert is_err is True
+    assert code == 429
+
+    # LLMJudgeAPIError instance
+    llm_err = LLMJudgeAPIError("Permission Denied", status_code=403)
+    is_err, code, msg = is_api_error(llm_err)
+    assert is_err is True
+    assert code == 403
+
+    # Non-API errors (e.g. ValueError or parsing errors)
+    val_err = ValueError("invalid literal for int() with base 10: 'Answer'")
+    is_err, code, msg = is_api_error(val_err)
+    assert is_err is False
+    assert code is None
+
+
+def test_make_llm_judge_raises_api_error():
+    """Verify make_llm_judge raises LLMJudgeAPIError on 403 / API errors instead of returning 0."""
+    class FailingLLM:
+        def invoke(self, messages):
+            raise Exception("Error code: 403 - Key limit exceeded (weekly limit)")
+
+    judge = make_llm_judge(llm=FailingLLM(), raise_on_api_error=True)
+    with pytest.raises(LLMJudgeAPIError) as exc_info:
+        judge("Candidate answer", "Golden answer")
+
+    assert exc_info.value.status_code == 403
+    assert "403" in str(exc_info.value)
+
+
+def test_make_llm_judge_returns_zero_on_malformed_text():
+    """Verify make_llm_judge returns 0 when output is unparseable (quality failure, not API failure)."""
+    class MalformedLLM:
+        def invoke(self, messages):
+            class Response:
+                content = "I cannot provide a rating for this question."
+            return Response()
+
+    judge = make_llm_judge(llm=MalformedLLM(), raise_on_api_error=True)
+    score = judge("Candidate answer", "Golden answer")
+    assert score == 0
+
+
+def test_full_suite_judge_comparison_skips_on_preflight_api_error():
+    """Verify full_suite_judge_comparison skips execution and NEVER calls Jev when LLM judge fails with API error."""
+    import pytest
+    from scripts.full_suite_judge_comparison import main
+
+    mock_llm_judge = MagicMock(side_effect=LLMJudgeAPIError("Key limit exceeded (weekly limit)", status_code=403))
+    mock_jev_evaluator = MagicMock()
+
+    with pytest.raises(pytest.skip.Exception) as exc_info:
+        main(limit=2, llm_judge=mock_llm_judge, jev_evaluator=mock_jev_evaluator)
+
+    assert "LLM judge unavailable" in str(exc_info.value)
+    # Crucial guarantee: Jev evaluations MUST NOT be called!
+    assert mock_jev_evaluator.call_count == 0
+
+
+def test_full_suite_judge_comparison_aborts_mid_suite_on_api_error():
+    """Verify full_suite_judge_comparison aborts immediately and does not call Jev when LLM judge fails during run."""
+    import pytest
+    from scripts.full_suite_judge_comparison import main
+
+    calls = 0
+
+    def mock_llm_judge(candidate: str, golden: str) -> int:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            # Preflight probe succeeds
+            return 5
+        # First question in loop fails with 403
+        raise LLMJudgeAPIError("Error code: 403 - Key limit exceeded", status_code=403)
+
+    mock_jev_evaluator = MagicMock()
+
+    with pytest.raises(pytest.skip.Exception) as exc_info:
+        main(limit=2, llm_judge=mock_llm_judge, jev_evaluator=mock_jev_evaluator)
+
+    assert "LLM judge failed" in str(exc_info.value)
+    # Exactly 1 call during initial preflight probe; ZERO calls for questions in the benchmark loop!
+    assert mock_jev_evaluator.call_count == 1
+
+
+
+def test_make_jev_judge_raises_api_error():
+    """Verify make_jev_judge raises JevJudgeAPIError on 403 / API errors instead of returning 0."""
+    class FailingTypeSafeClient:
+        def system_one(self, state, questions):
+            raise Exception("Error code: 403 - Forbidden: Invalid TypeSafe API key or quota exceeded")
+
+    judge = make_jev_judge(client=FailingTypeSafeClient(), raise_on_api_error=True)
+    with pytest.raises(JevJudgeAPIError) as exc_info:
+        judge("Candidate answer", "Golden answer")
+
+    assert exc_info.value.status_code == 403
+    assert "403" in str(exc_info.value)
+
+
+def test_full_suite_judge_comparison_skips_on_jev_preflight_api_error():
+    """Verify full_suite_judge_comparison skips execution when Jev judge fails during preflight probe."""
+    import pytest
+    from scripts.full_suite_judge_comparison import main
+
+    mock_llm_judge = MagicMock(return_value=5)
+    mock_jev_evaluator = MagicMock(side_effect=JevJudgeAPIError("403 Forbidden: TypeSafe quota exceeded", status_code=403))
+
+    with pytest.raises(pytest.skip.Exception) as exc_info:
+        main(limit=2, llm_judge=mock_llm_judge, jev_evaluator=mock_jev_evaluator)
+
+    assert "Jev judge unavailable" in str(exc_info.value)
+
+
+def test_full_suite_judge_comparison_skips_when_api_keys_missing(monkeypatch):
+    """Verify full_suite_judge_comparison skips when required API keys are missing from environment."""
+    import pytest
+    from scripts.full_suite_judge_comparison import main
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+
+    with pytest.raises(pytest.skip.Exception) as exc_info:
+        main()
+
+    assert "Missing required API key(s)" in str(exc_info.value)
+
+
+def test_llm_judge_model_name_dynamic():
+    """Verify make_llm_judge extracts model name dynamically from model or settings rather than hardcoded."""
+    class DummyLLM:
+        model_name = "deepseek/deepseek-v4.1-flash"
+
+        def invoke(self, messages):
+            class Response:
+                content = "5"
+            return Response()
+
+    judge = make_llm_judge(llm=DummyLLM())
+    assert getattr(judge, "model_name", None) == "deepseek/deepseek-v4.1-flash"
+
+
+
