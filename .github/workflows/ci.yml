@@ -28,7 +28,7 @@ jobs:
       OPENROUTER_MODEL: deepseek/deepseek-v4.1-flash
       RAG_TIER1_MODEL: deepseek/deepseek-v4.1-flash
       RAG_TIER2_MODEL: deepseek/deepseek-v4-flash-0731
-      RAG_TIER3_MODEL: deepseek/deepseek-pro-latest
+      RAG_TIER3_MODEL: deepseek/deepseek-v4-pro
       EMBEDDING_MODEL: openai/text-embedding-3-small
       EMBEDDING_STRATEGY: sequential
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
