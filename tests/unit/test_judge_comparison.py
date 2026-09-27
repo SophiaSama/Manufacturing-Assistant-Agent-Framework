@@ -287,10 +287,11 @@ def test_full_suite_judge_comparison_skips_on_preflight_api_error():
     from scripts.full_suite_judge_comparison import main
 
     mock_llm_judge = MagicMock(side_effect=LLMJudgeAPIError("Key limit exceeded (weekly limit)", status_code=403))
+    mock_jev_judge = MagicMock()
     mock_jev_evaluator = MagicMock()
 
     with pytest.raises(pytest.skip.Exception) as exc_info:
-        main(limit=2, llm_judge=mock_llm_judge, jev_evaluator=mock_jev_evaluator)
+        main(limit=2, llm_judge=mock_llm_judge, jev_judge=mock_jev_judge, jev_evaluator=mock_jev_evaluator)
 
     assert "LLM judge unavailable" in str(exc_info.value)
     # Crucial guarantee: Jev evaluations MUST NOT be called!
@@ -314,10 +315,11 @@ def test_full_suite_judge_comparison_aborts_mid_suite_on_api_error():
         # First question in loop fails with 403
         raise LLMJudgeAPIError("Error code: 403 - Key limit exceeded", status_code=403)
 
+    mock_jev_judge = MagicMock()
     mock_jev_evaluator = MagicMock()
 
     with pytest.raises(pytest.skip.Exception) as exc_info:
-        main(limit=2, llm_judge=mock_llm_judge, jev_evaluator=mock_jev_evaluator)
+        main(limit=2, llm_judge=mock_llm_judge, jev_judge=mock_jev_judge, jev_evaluator=mock_jev_evaluator)
 
     assert "LLM judge failed" in str(exc_info.value)
     # Exactly 1 call during initial preflight probe; ZERO calls for questions in the benchmark loop!
@@ -346,10 +348,11 @@ def test_full_suite_judge_comparison_skips_on_jev_preflight_api_error():
     from scripts.full_suite_judge_comparison import main
 
     mock_llm_judge = MagicMock(return_value=5)
+    mock_jev_judge = MagicMock()
     mock_jev_evaluator = MagicMock(side_effect=JevJudgeAPIError("403 Forbidden: TypeSafe quota exceeded", status_code=403))
 
     with pytest.raises(pytest.skip.Exception) as exc_info:
-        main(limit=2, llm_judge=mock_llm_judge, jev_evaluator=mock_jev_evaluator)
+        main(limit=2, llm_judge=mock_llm_judge, jev_judge=mock_jev_judge, jev_evaluator=mock_jev_evaluator)
 
     assert "Jev judge unavailable" in str(exc_info.value)
 
