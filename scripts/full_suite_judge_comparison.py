@@ -5,15 +5,21 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from dotenv import load_dotenv
 
 from nga.evaluation.ci_tracker import record_eval_run
-from nga.evaluation.judge import evaluate_with_jev, make_jev_judge, make_llm_judge
+from nga.evaluation.judge import (
+    evaluate_with_jev,
+    is_api_error,
+    make_jev_judge,
+    make_llm_judge,
+)
 
 load_dotenv()
 
@@ -131,11 +137,17 @@ CONFLICT_SCENARIOS = [
 ]
 
 
-def main():
+def main(
+    limit: int | None = None,
+    llm_judge: Callable[[str, str], int] | None = None,
+    jev_judge: Callable[[str, str], int] | None = None,
+    jev_evaluator: Callable[..., Any] | None = None,
+) -> bool:
     import argparse
     parser = argparse.ArgumentParser(description="Full suite judge comparison benchmark.")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of benchmark questions to evaluate")
     args, _ = parser.parse_known_args()
+    eff_limit = limit if limit is not None else args.limit
 
     print("=" * 80)
     print("NGA MANUFACTURING ASSISTANT — FULL SUITE JUDGE BENCHMARK")
@@ -146,12 +158,104 @@ def main():
         data = json.load(f)
 
     questions: List[Dict[str, Any]] = data["questions"]
-    if args.limit and args.limit > 0:
-        questions = questions[:args.limit]
+    if eff_limit and eff_limit > 0:
+        questions = questions[:eff_limit]
     print(f"Loaded {len(questions)} evaluation benchmark questions.")
 
-    llm_judge = make_llm_judge()
-    jev_judge = make_jev_judge()
+    # 1. Validate API keys for BOTH judges
+    import os
+    missing_keys = []
+    typesafe_key = (os.getenv("TYPESAFE_API_KEY") or "").strip()
+    if not typesafe_key or typesafe_key.lower().startswith("your-"):
+        missing_keys.append("TYPESAFE_API_KEY")
+
+    openrouter_key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    openai_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not openrouter_key and not openai_key:
+        missing_keys.append("OPENROUTER_API_KEY (or OPENAI_API_KEY)")
+
+    # Only enforce env keys if custom judge functions were not injected
+    if missing_keys and (llm_judge is None or jev_judge is None):
+        skip_msg = (
+            f"Missing required API key(s) for judge comparison: {', '.join(missing_keys)}.\n"
+            f"Both LLM Judge and TypeSafe Jev Judge require valid API keys in order to be compared in this suite.\n"
+            f"This comparison cannot be performed and is skipped."
+        )
+        print("\n" + "=" * 80)
+        print("SKIPPING FULL SUITE JUDGE COMPARISON: MISSING API KEY(S)")
+        print("=" * 80)
+        print(skip_msg)
+        print("=" * 80 + "\n")
+        logger.warning(skip_msg)
+        if "pytest" in sys.modules:
+            import pytest
+            pytest.skip(skip_msg)
+        return False
+
+    if llm_judge is None:
+        llm_judge = make_llm_judge()
+    if jev_judge is None:
+        jev_judge = make_jev_judge()
+    if jev_evaluator is None:
+        jev_evaluator = evaluate_with_jev
+
+    # 2. Pre-flight probe: check if BOTH judges can be inferenced
+    print("\nProbing both judges for availability and inference before commencing full-suite comparison...")
+    probe_cand = "Based on plant specifications, the requirement is: SOP-OPR-101 torque 105 Nm."
+    probe_gold = "105 Nm per SOP-OPR-101"
+
+    # Probe LLM Judge
+    print("  [1/2] Probing LLM Judge...")
+    try:
+        _llm_probe = llm_judge(probe_cand, probe_gold)
+        print(f"  ✓ LLM judge preflight probe succeeded (score={_llm_probe}).")
+    except Exception as exc:
+        is_err, status_code, msg = is_api_error(exc)
+        skip_msg = (
+            f"LLM judge failed preflight probe due to API error (status={status_code}):\n  {msg}\n\n"
+            f"Both judges must have valid API keys and be inferenced in order to perform this comparison.\n"
+            f"This comparison cannot be performed and is skipped.\n"
+            f"No evaluations will be performed, and no comparison report will be written."
+        )
+        print("\n" + "=" * 80)
+        print("SKIPPING FULL SUITE JUDGE COMPARISON: LLM JUDGE API ERROR")
+        print("=" * 80)
+        print(skip_msg)
+        print("=" * 80 + "\n")
+        logger.warning("Skipping full-suite judge comparison due to LLM judge API error (status=%s): %s", status_code, msg)
+        if "pytest" in sys.modules:
+            import pytest
+            pytest.skip(f"LLM judge unavailable (API error {status_code}): {msg}")
+        return False
+
+    # Probe Jev Judge
+    print("  [2/2] Probing TypeSafe Jev Judge...")
+    try:
+        _jev_probe_diag = jev_evaluator(probe_cand, probe_gold)
+        _jev_score = (
+            _jev_probe_diag["score_int"]
+            if isinstance(_jev_probe_diag, dict) or hasattr(_jev_probe_diag, "__getitem__")
+            else int(_jev_probe_diag)
+        )
+        print(f"  ✓ TypeSafe Jev judge preflight probe succeeded (score={_jev_score}).")
+    except Exception as exc:
+        is_err, status_code, msg = is_api_error(exc)
+        skip_msg = (
+            f"TypeSafe Jev judge failed preflight probe due to API error (status={status_code}):\n  {msg}\n\n"
+            f"Both judges must have valid API keys and be inferenced in order to perform this comparison.\n"
+            f"This comparison cannot be performed and is skipped.\n"
+            f"No evaluations will be performed, and no comparison report will be written."
+        )
+        print("\n" + "=" * 80)
+        print("SKIPPING FULL SUITE JUDGE COMPARISON: JEV JUDGE API ERROR")
+        print("=" * 80)
+        print(skip_msg)
+        print("=" * 80 + "\n")
+        logger.warning("Skipping full-suite judge comparison due to Jev judge API error (status=%s): %s", status_code, msg)
+        if "pytest" in sys.modules:
+            import pytest
+            pytest.skip(f"Jev judge unavailable (API error {status_code}): {msg}")
+        return False
 
     # Results tracking
     llm_scores = []
@@ -184,11 +288,49 @@ def main():
 
         # Benchmark Positive Control
         t0 = time.perf_counter()
-        llm_score = llm_judge(pos_candidate, golden)
+        try:
+            llm_score = llm_judge(pos_candidate, golden)
+        except Exception as exc:
+            is_err, status_code, msg = is_api_error(exc)
+            if is_err:
+                skip_msg = (
+                    f"LLM judge failed at question {idx}/{total_evals} ({qid}) with API error (status={status_code}):\n  {msg}\n"
+                    f"This comparison cannot be performed and is skipped. Aborting remaining evaluations."
+                )
+                print("\n" + "=" * 80)
+                print("ABORTING FULL SUITE JUDGE COMPARISON: LLM JUDGE API ERROR")
+                print("=" * 80)
+                print(skip_msg)
+                print("=" * 80 + "\n")
+                logger.warning("Aborted judge comparison at %s due to LLM API error: %s", qid, msg)
+                if "pytest" in sys.modules:
+                    import pytest
+                    pytest.skip(f"LLM judge failed at {qid} (API error {status_code}): {msg}")
+                return False
+            raise
         llm_lat = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
-        jev_diag = evaluate_with_jev(pos_candidate, golden)
+        try:
+            jev_diag = jev_evaluator(pos_candidate, golden)
+        except Exception as exc:
+            is_err, status_code, msg = is_api_error(exc)
+            if is_err:
+                skip_msg = (
+                    f"Jev judge failed at question {idx}/{total_evals} ({qid}) with API error (status={status_code}):\n  {msg}\n"
+                    f"This comparison cannot be performed and is skipped. Aborting remaining evaluations."
+                )
+                print("\n" + "=" * 80)
+                print("ABORTING FULL SUITE JUDGE COMPARISON: JEV JUDGE API ERROR")
+                print("=" * 80)
+                print(skip_msg)
+                print("=" * 80 + "\n")
+                logger.warning("Aborted judge comparison at %s due to Jev API error: %s", qid, msg)
+                if "pytest" in sys.modules:
+                    import pytest
+                    pytest.skip(f"Jev judge failed at {qid} (API error {status_code}): {msg}")
+                return False
+            raise
         jev_lat = (time.perf_counter() - t0) * 1000
         jev_score = jev_diag["score_int"]
 
@@ -202,8 +344,47 @@ def main():
 
         # Negative candidate (perturbed)
         neg_candidate = perturb_answer(golden, cat)
-        llm_neg_score = llm_judge(neg_candidate, golden)
-        jev_neg_score = jev_judge(neg_candidate, golden)
+        try:
+            llm_neg_score = llm_judge(neg_candidate, golden)
+        except Exception as exc:
+            is_err, status_code, msg = is_api_error(exc)
+            if is_err:
+                skip_msg = (
+                    f"LLM judge failed during negative control for question {idx}/{total_evals} ({qid}) with API error (status={status_code}):\n  {msg}\n"
+                    f"This comparison cannot be performed and is skipped. Aborting remaining evaluations."
+                )
+                print("\n" + "=" * 80)
+                print("ABORTING FULL SUITE JUDGE COMPARISON: LLM JUDGE API ERROR")
+                print("=" * 80)
+                print(skip_msg)
+                print("=" * 80 + "\n")
+                logger.warning("Aborted judge comparison at %s (negative) due to LLM API error: %s", qid, msg)
+                if "pytest" in sys.modules:
+                    import pytest
+                    pytest.skip(f"LLM judge failed at {qid} (API error {status_code}): {msg}")
+                return False
+            raise
+
+        try:
+            jev_neg_score = jev_judge(neg_candidate, golden)
+        except Exception as exc:
+            is_err, status_code, msg = is_api_error(exc)
+            if is_err:
+                skip_msg = (
+                    f"Jev judge failed during negative control for question {idx}/{total_evals} ({qid}) with API error (status={status_code}):\n  {msg}\n"
+                    f"This comparison cannot be performed and is skipped. Aborting remaining evaluations."
+                )
+                print("\n" + "=" * 80)
+                print("ABORTING FULL SUITE JUDGE COMPARISON: JEV JUDGE API ERROR")
+                print("=" * 80)
+                print(skip_msg)
+                print("=" * 80 + "\n")
+                logger.warning("Aborted judge comparison at %s (negative) due to Jev API error: %s", qid, msg)
+                if "pytest" in sys.modules:
+                    import pytest
+                    pytest.skip(f"Jev judge failed at {qid} (API error {status_code}): {msg}")
+                return False
+            raise
 
         if llm_neg_score <= 2:
             negative_detections_llm += 1
@@ -226,6 +407,8 @@ def main():
             "llm_lat": llm_lat,
             "jev_lat": jev_lat,
             "jev_faithful": jev_diag["is_faithful"],
+            "jev_specs_accurate": jev_diag.get("specs_accurate", 1.0),
+            "jev_failure_mode": jev_diag.get("failure_mode", "none"),
             "llm_neg_score": llm_neg_score,
             "jev_neg_score": jev_neg_score,
         })
@@ -271,8 +454,45 @@ def main():
         sname = s["name"]
         golden = s["golden"]
         for cond_name, ans_text in s["answers"].items():
-            llm_s = llm_judge(ans_text, golden)
-            jev_diag = evaluate_with_jev(ans_text, golden)
+            try:
+                llm_s = llm_judge(ans_text, golden)
+            except Exception as exc:
+                is_err, status_code, msg = is_api_error(exc)
+                if is_err:
+                    skip_msg = (
+                        f"LLM judge failed during contradiction scenario {sid} due to API error (status={status_code}):\n  {msg}\n"
+                        f"This comparison cannot be performed and is skipped."
+                    )
+                    print("\n" + "=" * 80)
+                    print("ABORTING CONTRADICTION EVALUATION: LLM JUDGE API ERROR")
+                    print("=" * 80)
+                    print(skip_msg)
+                    print("=" * 80 + "\n")
+                    logger.warning("Aborted contradiction eval at %s due to LLM API error: %s", sid, msg)
+                    if "pytest" in sys.modules:
+                        import pytest
+                        pytest.skip(f"LLM judge failed at {sid} (API error {status_code}): {msg}")
+                    return False
+            try:
+                jev_diag = jev_evaluator(ans_text, golden)
+            except Exception as exc:
+                is_err, status_code, msg = is_api_error(exc)
+                if is_err:
+                    skip_msg = (
+                        f"Jev judge failed during contradiction scenario {sid} due to API error (status={status_code}):\n  {msg}\n"
+                        f"This comparison cannot be performed and is skipped."
+                    )
+                    print("\n" + "=" * 80)
+                    print("ABORTING CONTRADICTION EVALUATION: JEV JUDGE API ERROR")
+                    print("=" * 80)
+                    print(skip_msg)
+                    print("=" * 80 + "\n")
+                    logger.warning("Aborted contradiction eval at %s due to Jev API error: %s", sid, msg)
+                    if "pytest" in sys.modules:
+                        import pytest
+                        pytest.skip(f"Jev judge failed at {sid} (API error {status_code}): {msg}")
+                    return False
+                raise
             jev_s = jev_diag["score_int"]
             probs = jev_diag["probabilities"]
             prob_str = " ".join([f"{k}:{v:.2f}" for k, v in sorted(probs.items()) if v >= 0.05])
@@ -288,14 +508,30 @@ def main():
             print(f"  [{sid}] {sname[:26]:<26} | {cond_name:<20} | LLM: {llm_s} | Jev: {jev_s} ({prob_str})")
 
     # Save Markdown report
-    report_path = Path(__file__).resolve().parents[1] / "reports" / "eval" / "full_suite_judge_comparison.md"
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    model_slug = "typesafe_jev"
+    judge_dir = Path(__file__).resolve().parents[1] / "reports" / "judge" / date_str
+    judge_dir.mkdir(parents=True, exist_ok=True)
+    report_path = judge_dir / f"{model_slug}_full_suite_judge_comparison.md"
+    legacy_md = Path(__file__).resolve().parents[1] / "reports" / "eval" / "full_suite_judge_comparison.md"
+    legacy_md.parent.mkdir(parents=True, exist_ok=True)
+
+    llm_model_name = (
+        getattr(llm_judge, "model_name", None)
+        or os.getenv("OPENROUTER_MODEL")
+        or "deepseek/deepseek-v4.1-flash"
+    )
+    jev_model_name = (
+        getattr(jev_judge, "model_name", None)
+        or os.getenv("RERANK_MODEL")
+        or "jev-latest"
+    )
+
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Full-Suite Evaluation: TypeSafe Jev Judge vs. LLM-as-a-Judge\n\n")
         f.write(f"**Total Questions:** {n} (from `eval-questions/questions.json`) + 8 Cross-Document Contradiction Scenarios\n\n")
         f.write("## 1. Executive Summary\n\n")
-        f.write("| Metric | LLM-as-a-Judge (`gemini-2.5-flash-lite`) | TypeSafe Jev Judge (`jev-1.13.0`) |\n")
+        f.write(f"| Metric | LLM-as-a-Judge (`{llm_model_name}`) | TypeSafe Jev Judge (`{jev_model_name}`) |\n")
         f.write("| :--- | :---: | :---: |\n")
         f.write(f"| **Average Latency** | {avg_llm_lat:.1f} ms | **{avg_jev_lat:.1f} ms** |\n")
         f.write(f"| **Score Agreement (±1 Level)** | Baseline | **{agreement_pct:.1f}%** |\n")
@@ -341,10 +577,13 @@ def main():
 
             f.write(f"| {cr['id']} | {cr['name']} | `{cond}` | {llm_s}/5 | {jev_s}/5 | {ast_status} | {judge_verdict} | {cr['jev_prob_str']} |\n")
 
+    # Copy to legacy path
+    legacy_md.write_text(report_path.read_text(encoding="utf-8"), encoding="utf-8")
     print(f"\nFull report saved to: {report_path}")
 
     # Save JSON report for A/B studio and CI trends tracking
     json_path = report_path.with_suffix(".json")
+    legacy_json = legacy_md.with_suffix(".json")
     json_payload = {
         "run_label": "full_suite_judge_comparison",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -368,6 +607,8 @@ def main():
             ],
         },
         "judge_comparison": {
+            "llm_model": llm_model_name,
+            "jev_model": jev_model_name,
             "total_questions": n,
             "agreement_pct": round(agreement_pct, 1),
             "llm_hallucination_catch_rate": round(llm_neg_rate, 1),
@@ -405,6 +646,7 @@ def main():
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(json_payload, f, indent=2)
+    legacy_json.write_text(json_path.read_text(encoding="utf-8"), encoding="utf-8")
     print(f"JSON benchmark report saved to: {json_path}")
 
     # Record to historical ledger for CI trend tracking
@@ -418,8 +660,12 @@ def main():
         "Full-suite judge comparison completed: Total=%d, Agreement=%.1f%%, HallucinationCatch(Jev)=%.1f%%, AvgJevLat=%.1fms",
         n, agreement_pct, jev_neg_rate, avg_jev_lat,
     )
+    return True
 
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    if not success:
+        sys.exit(0)
+
 

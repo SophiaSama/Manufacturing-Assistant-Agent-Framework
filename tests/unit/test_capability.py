@@ -44,6 +44,7 @@ class TestCloudAllowlist:
             ("anthropic/claude-opus-4-5", "strong"),
             ("openai/gpt-4o", "strong"),
             ("deepseek/deepseek-v4", "strong"),
+            ("deepseek/deepseek-v4-pro", "strong"),
             ("qwen/qwen3-embedding-4b", None),  # embedding model — not chat
         ],
     )

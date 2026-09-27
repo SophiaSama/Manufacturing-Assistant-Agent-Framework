@@ -252,35 +252,43 @@ Quantifies operational token economics and ROI between **System One Jev accelera
 
 ---
 
-## 🧪 Automated Test Suites
+## 🧪 Automated Test Suites & Taxonomy
 
-The repository contains an automated test suite across unit, integration, and security layers:
+The repository organizes tests into four dedicated subdirectories with clear boundaries:
+
+| Directory | Scope | Execution | Dependencies |
+| :--- | :--- | :--- | :--- |
+| **`tests/unit/`** | Fast unit tests: caching, routing, grounding, Jev reasoning, reranker, release gates, report generation. | `uv run pytest tests/unit/ -v` | Offline / fully mocked |
+| **`tests/integration/`** | System & integration tests: Web UI REST APIs, multi-turn stress tests, concurrency, and cross-document contradiction detection. | `uv run pytest tests/integration/ -v` | In-memory / SQLite |
+| **`tests/benchmarks/`** | Stepped evaluation suite & curated benchmark runners against the 85-question synthetic manufacturing corpus. | `uv run pytest tests/benchmarks/ -v` | Corpus / vector store |
+| **`tests/fixtures/`** | Benchmark ground truth datasets (`ground-truth.md`), seed configurations, and fixture assets. | Referenced by tests | Static |
 
 ```bash
-# Run all unit and integration tests
-uv run pytest tests/test_*.py -v
+# Run all unit tests (180+ tests, < 5s)
+uv run pytest tests/unit/ -v
 
-# Run Generic Enterprise Framework tests
-uv run pytest tests/test_generic_framework.py -v
+# Run integration tests (UI API, concurrency, stress)
+uv run pytest tests/integration/test_ui_api.py tests/integration/test_stress.py -v
 
-# Run TypeSafe Jev Reranker tests
-uv run pytest tests/test_rerank.py -v
+# Run benchmark evaluation tests
+uv run pytest tests/benchmarks/ -v
 
-# Run Deterministic Grounding tests
-uv run pytest tests/test_grounding.py -v
-
-# Run Judge Comparison tests (TypeSafe Jev vs LLM Judge)
-uv run pytest tests/test_judge_comparison.py -v
-
-# Run Multi-Tier Cache tests
-uv run pytest tests/test_cache.py -v
-
-# Run Web UI API integration tests
-uv run pytest tests/test_ui_api.py -v
-
-# Run Adversarial & Concurrency Stress tests
-uv run pytest tests/integration/test_stress.py -v
+# Run the complete test suite
+uv run pytest -v
 ```
+
+---
+
+## 📊 Evaluation Reports & Artifacts Hierarchy
+
+All evaluation outputs and benchmark runs are structured under `reports/` organized by evaluation domain, execution date, and model:
+
+- **`reports/benchmarks/{YYYYMMDD}_{model_slug}/`**: Systematic benchmark runs across the 85 evaluation questions, storing markdown reports and JSON run ledgers timestamped by execution date and model.
+- **`reports/judge/{YYYYMMDD}/`**: TypeSafe Jev Judge vs. Classical LLM-as-a-Judge comparison reports, hallucination detection rates, and 5-dimension parallel question diagnostics.
+- **`reports/graph/`**: Quantitative Knowledge Graph quality metrics (connectivity, orphan rate, relation distribution).
+- **`reports/multi_model/`**: Multi-model Pareto frontier analysis, latency vs. quality trade-offs, and TCER cost benchmarks.
+- **`reports/ci/`**: Historical trend ledgers (`history.json`), SVG trend charts (`trends.svg`), and CI release gate summaries.
+- **`reports/eval/`**: Backwards-compatibility mirror directory ensuring existing UI endpoints and scripts resolve seamlessly.
 
 ---
 
@@ -313,9 +321,20 @@ uv run pytest tests/integration/test_stress.py -v
 │       ├── ingestion/                # Vector store & graph builder pipelines
 │       ├── tools/                    # NGA SQL & document retrieval tools
 │       └── ui/                       # Modern web dashboard (FastAPI backend + web assets)
+├── tests/                            # Organized 4-tier testing hierarchy
+│   ├── unit/                         # Unit tests (cache, routing, grounding, judge, rerank, etc.)
+│   ├── integration/                  # Integration tests (FastAPI UI, stress, contradiction detection)
+│   ├── benchmarks/                   # Stepped evaluation & curated benchmark tests
+│   └── fixtures/                     # Test fixtures & ground truth datasets
+├── reports/                          # Structured evaluation reports & benchmark artifacts
+│   ├── benchmarks/                   # Date & model-stamped benchmark reports (JSON & MD)
+│   ├── judge/                        # TypeSafe Jev Judge evaluation & comparison reports
+│   ├── graph/                        # Graph quality and connectivity metrics
+│   ├── multi_model/                  # Multi-model arena & Pareto frontier analyses
+│   ├── ci/                           # CI trend ledgers (history.json, trends.svg)
+│   └── eval/                         # Compatibility mirror for UI and tools
 ├── scripts/                          # Utility & benchmark comparison scripts
 │   └── full_suite_judge_comparison.py# Jev Judge vs Classical LLM Judge full-suite runner
-├── tests/                            # Comprehensive unit, integration, and stress tests
 ├── eval-questions/                   # 85 synthetic benchmark evaluation questions
 ├── eval-graph/                       # Gold standard manufacturing knowledge graph
 ├── database/                         # Seeded NGA SQLite production database (nga.db)

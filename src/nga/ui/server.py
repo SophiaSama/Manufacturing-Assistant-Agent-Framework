@@ -794,6 +794,8 @@ def create_app() -> FastAPI:
     def get_graph_quality(refresh: bool = False) -> dict[str, Any]:
         """Dashboard 1: Four Quantitative Graph Quality Metrics."""
         metrics_file = Path("reports/eval/graph_quality_metrics.json")
+        if not metrics_file.exists():
+            metrics_file = Path("reports/graph/graph_quality_metrics.json")
         if metrics_file.exists() and not refresh:
             try:
                 with open(metrics_file, encoding="utf-8") as f:
@@ -885,6 +887,8 @@ def create_app() -> FastAPI:
     def get_multi_model_analysis(request: MultiModelEvalRequest) -> dict[str, Any]:
         """Dashboard 4: Multi-Model Evaluation Arena and Pareto Frontier."""
         benchmark_file = Path("reports/eval/multi_model_benchmark.json")
+        if not benchmark_file.exists():
+            benchmark_file = Path("reports/multi_model/multi_model_benchmark.json")
         if benchmark_file.exists():
             try:
                 with open(benchmark_file, encoding="utf-8") as f:
@@ -918,7 +922,16 @@ def create_app() -> FastAPI:
     def get_judge_benchmark() -> dict[str, Any]:
         """Return TypeSafe Jev Judge vs Classical LLM benchmark comparison data."""
         json_path = Path("reports/eval/full_suite_judge_comparison.json")
+        if not json_path.exists():
+            candidates = list(Path("reports/judge").rglob("*full_suite_judge_comparison.json"))
+            if candidates:
+                json_path = candidates[0]
+
         md_path = Path("reports/eval/full_suite_judge_comparison.md")
+        if not md_path.exists():
+            candidates = list(Path("reports/judge").rglob("*full_suite_judge_comparison.md"))
+            if candidates:
+                md_path = candidates[0]
 
         data: dict[str, Any] = {}
         if json_path.exists():
@@ -946,13 +959,20 @@ def create_app() -> FastAPI:
 
     @app.get("/api/eval/markdown-reports")
     def list_markdown_reports() -> dict[str, Any]:
-        """List all available markdown evaluation reports."""
-        reports_dir = Path("reports/eval")
-        if not reports_dir.exists():
-            return {"reports": []}
+        """List all available markdown evaluation reports across reports subdirectories."""
+        search_dirs = [Path("reports"), Path("reports/eval")]
+        seen_paths = set()
+        all_md = []
+        for sdir in search_dirs:
+            if sdir.exists():
+                for p in sdir.rglob("*.md"):
+                    resolved = p.resolve()
+                    if resolved not in seen_paths and "node_modules" not in p.parts:
+                        seen_paths.add(resolved)
+                        all_md.append(p)
 
         md_files = []
-        for p in sorted(reports_dir.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True):
+        for p in sorted(all_md, key=lambda x: x.stat().st_mtime, reverse=True):
             md_files.append({
                 "filename": p.name,
                 "title": p.stem.replace("_", " ").title(),
@@ -965,11 +985,16 @@ def create_app() -> FastAPI:
     def get_markdown_report(filename: str) -> dict[str, Any]:
         """Retrieve content of a specific markdown evaluation report."""
         clean_name = Path(filename).name
-        report_file = Path("reports/eval") / clean_name
-        if not report_file.exists() or not clean_name.endswith(".md"):
+        target = Path("reports/eval") / clean_name
+        if not target.exists():
+            candidates = list(Path("reports").rglob(clean_name))
+            if candidates:
+                target = candidates[0]
+
+        if not target.exists() or not clean_name.endswith(".md"):
             raise HTTPException(status_code=404, detail="Markdown report not found")
 
-        with open(report_file, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             content = f.read()
         return {
             "filename": clean_name,

@@ -30,6 +30,7 @@ class ScoreResult:
     grounding: GroundingResult | None = None
     token_usage: dict[str, Any] | None = None
     model_name: str | None = None
+    judge_diagnostics: dict[str, Any] | None = None
 
 
 def _parsed_tool_payloads(tool_outputs: list[str] | None) -> list[dict]:
@@ -141,9 +142,19 @@ def score_answer(
     deterministic_score = sum(1 for v in checks.values() if v) / max(len(checks), 1)
 
     judge_score: int | None = None
+    judge_diag: dict[str, Any] | None = None
     if judge is not None and not error:
         try:
-            judge_score = int(judge(answer, golden))
+            raw_judge = judge(answer, golden)
+            judge_score = int(raw_judge)
+            if hasattr(raw_judge, "diagnostics") and raw_judge.diagnostics:
+                judge_diag = (
+                    raw_judge.diagnostics.as_dict()
+                    if hasattr(raw_judge.diagnostics, "as_dict")
+                    else dict(raw_judge.diagnostics)
+                )
+            elif isinstance(raw_judge, dict):
+                judge_diag = raw_judge
             overall = (deterministic_score + judge_score / 5) / 2
         except Exception:
             overall = deterministic_score
@@ -167,4 +178,5 @@ def score_answer(
         grounding=grounding,
         token_usage=token_usage,
         model_name=model_name,
+        judge_diagnostics=judge_diag,
     )

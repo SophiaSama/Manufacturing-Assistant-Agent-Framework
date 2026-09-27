@@ -319,12 +319,13 @@ def run_evaluation_suite(
         cache.close()
 
     md_path, json_path = save_report(
-        results, reports_dir=reports_dir, run_label=label,
+        results, reports_dir=reports_dir, run_label=run_label,
         cache_mode=cache_mode, cache_summary=cache_summary,
         model_name=model_name,
     )
+    final_label = md_path.stem
     summary = build_summary(results)
-    summary["run_label"] = label
+    summary["run_label"] = final_label
     summary["md_report_path"] = str(md_path)
     summary["json_report_path"] = str(json_path)
     summary["cache_mode"] = cache_mode
@@ -365,15 +366,23 @@ def _aggregate_cache_stats(results: list[ScoreResult]) -> dict[str, Any]:
     return out
 
 
-def list_evaluation_reports(reports_dir: str = "reports/eval") -> list[dict[str, Any]]:
-    """List all saved evaluation reports with summary metadata."""
-    out_dir = Path(reports_dir)
-    if not out_dir.exists():
+def list_evaluation_reports(reports_dir: str = "reports") -> list[dict[str, Any]]:
+    """List all saved evaluation reports with summary metadata across reports directories."""
+    base_dir = Path(reports_dir)
+    if not base_dir.exists():
         return []
 
     reports = []
-    for json_file in sorted(out_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if json_file.name == "history.json":
+    seen_paths = set()
+    all_files = []
+    for p in base_dir.rglob("*.json"):
+        resolved = p.resolve()
+        if resolved not in seen_paths:
+            seen_paths.add(resolved)
+            all_files.append(p)
+
+    for json_file in sorted(all_files, key=lambda p: p.stat().st_mtime, reverse=True):
+        if json_file.name in ("history.json", "package.json", "tsconfig.json"):
             continue
         try:
             with open(json_file, encoding="utf-8") as f:
@@ -383,6 +392,8 @@ def list_evaluation_reports(reports_dir: str = "reports/eval") -> list[dict[str,
             summary = data.get("summary", {})
             reports.append({
                 "run_label": data.get("run_label") or json_file.stem,
+                "model_name": data.get("model_name"),
+                "execution_date": data.get("execution_date"),
                 "timestamp": datetime.fromtimestamp(
                     json_file.stat().st_mtime, timezone.utc
                 ).isoformat(),
@@ -399,17 +410,37 @@ def list_evaluation_reports(reports_dir: str = "reports/eval") -> list[dict[str,
     return reports
 
 
-def get_evaluation_report(run_label: str, reports_dir: str = "reports/eval") -> dict[str, Any] | None:
-    """Retrieve full evaluation report JSON by run_label."""
-    json_path = Path(reports_dir) / f"{run_label}.json"
-    if not json_path.exists():
+def get_evaluation_report(run_label: str, reports_dir: str = "reports") -> dict[str, Any] | None:
+    """Retrieve full evaluation report JSON by run_label across reports directories."""
+    base_dir = Path(reports_dir)
+    if not base_dir.exists():
         return None
+
+    target: Path | None = None
+
+    # 1. Direct check
+    direct = base_dir / f"{run_label}.json"
+    if direct.exists():
+        target = direct
+    elif run_label.endswith(".json") and (base_dir / run_label).exists():
+        target = base_dir / run_label
+    else:
+        # 2. Recursive search in base_dir
+        matches = list(base_dir.rglob(f"{run_label}.json"))
+        if not matches:
+            matches = [p for p in base_dir.rglob("*.json") if p.stem == run_label]
+        if matches:
+            target = matches[0]
+
+    if not target or not target.exists() or target.name == "history.json":
+        return None
+
     try:
-        with open(json_path, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, dict) else None
     except Exception as exc:
-        logger.warning("Error reading report %s: %s", json_path, exc)
+        logger.warning("Error reading report %s: %s", target, exc)
         return None
 
 

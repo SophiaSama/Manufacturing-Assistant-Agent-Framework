@@ -14,7 +14,7 @@ from nga.ingestion.build_vector_store import (
     variant_diff_map,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VARIANT_DIR = PROJECT_ROOT / "variant-corpus"
 
 # The 8 planted inconsistencies (ledger: variant-corpus/planted-inconsistencies.md)
