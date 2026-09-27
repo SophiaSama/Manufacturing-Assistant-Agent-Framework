@@ -161,6 +161,20 @@ def evaluate_release_gate(
     if not check_sql_safe:
         reasons.append("Adversarial SQL injection test (STR4) failed sanitation")
 
+    # 7. Token Consumption Efficiency Ratio (TCER <= 0.45 target)
+    cand_tok = candidate_report.get("token_summary") or cand_summary.get("token_summary")
+    if cand_tok and "avg_tcer" in cand_tok:
+        cand_tcer = float(cand_tok["avg_tcer"])
+        max_tcer = float(crit.get("max_allowed_tcer", 0.45))
+        check_tcer = cand_tcer <= max_tcer
+        checks["token_efficiency_tcer"] = {
+            "passed": check_tcer,
+            "actual": f"{cand_tcer:.3f}",
+            "required": f"≤ {max_tcer:.2f}",
+        }
+        if not check_tcer:
+            reasons.append(f"Candidate average TCER ({cand_tcer:.3f}) exceeded {max_tcer:.2f} ceiling")
+
     passed_checks_count = sum(1 for c in checks.values() if c["passed"])
     total_checks_count = len(checks)
     status = "APPROVED" if passed_checks_count == total_checks_count else "REJECTED"

@@ -226,3 +226,107 @@ def test_api_trends_and_history_endpoints(client, monkeypatch):
         assert res_svg.status_code == 200
         assert res_svg.headers["content-type"].startswith("image/svg+xml")
         assert "<svg" in res_svg.text
+
+
+def test_list_evaluation_reports_ignores_history_and_non_dict(caplog):
+    """Ensure list_evaluation_reports safely ignores history.json and non-dict JSON files without warnings."""
+    import json
+    import logging
+
+    from nga.evaluation.eval_runner import (
+        get_evaluation_report,
+        list_evaluation_reports,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        reports_dir = Path(tmpdir)
+        # Create history.json which is a list
+        (reports_dir / "history.json").write_text(json.dumps([{"commit_sha": "abc"}]), encoding="utf-8")
+        # Create a valid report
+        valid_report = {
+            "run_label": "run_valid",
+            "summary": {"total": 5, "passed": 5, "pass_rate": 1.0, "avg_score": 0.9, "avg_latency_s": 1.0, "by_category": []},
+            "results": [],
+        }
+        (reports_dir / "run_valid.json").write_text(json.dumps(valid_report), encoding="utf-8")
+        # Create another non-dict json file (e.g. array)
+        (reports_dir / "other_list.json").write_text(json.dumps(["item1", "item2"]), encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING):
+            reports = list_evaluation_reports(str(reports_dir))
+
+        # Only run_valid should be parsed
+        assert len(reports) == 1
+        assert reports[0]["run_label"] == "run_valid"
+        # No warning should have been logged for history.json or other_list.json
+        assert "Failed to parse eval report" not in caplog.text
+
+        # get_evaluation_report should safely return None for non-dict files
+        assert get_evaluation_report("history", str(reports_dir)) is None
+        assert get_evaluation_report("run_valid", str(reports_dir)) is not None
+
+
+def test_record_eval_run_tracks_model_and_token_summary():
+    """Verify record_eval_run records model_name, token_summary, and computes tcer_delta."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        hist_file = str(Path(tmpdir) / "history.json")
+
+        report_1 = {
+            "run_label": "run_model_1",
+            "model_name": "anthropic/claude-haiku-4-5",
+            "token_summary": {
+                "total_tokens": 15000,
+                "avg_tcer": 0.42,
+                "avg_cost_per_query_usd": 0.0025,
+            },
+            "summary": {
+                "total": 5,
+                "passed": 4,
+                "pass_rate": 0.80,
+                "avg_score": 0.85,
+                "avg_latency_s": 2.1,
+            },
+        }
+        git_meta_1 = {
+            "commit_sha": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+            "short_sha": "aaaa111",
+            "branch": "main",
+            "author": "Alice",
+            "commit_message": "baseline model",
+            "timestamp": "2026-08-20T10:00:00Z",
+        }
+        entry_1 = record_eval_run(report_1, history_file=hist_file, custom_git_meta=git_meta_1)
+        assert entry_1["model_name"] == "anthropic/claude-haiku-4-5"
+        assert entry_1["token_summary"]["avg_tcer"] == 0.42
+
+        report_2 = {
+            "run_label": "run_model_2",
+            "model_name": "anthropic/claude-sonnet-4-5",
+            "token_summary": {
+                "total_tokens": 12000,
+                "avg_tcer": 0.35,
+                "avg_cost_per_query_usd": 0.0018,
+            },
+            "summary": {
+                "total": 5,
+                "passed": 5,
+                "pass_rate": 1.0,
+                "avg_score": 0.95,
+                "avg_latency_s": 1.8,
+            },
+        }
+        git_meta_2 = {
+            "commit_sha": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
+            "short_sha": "bbbb222",
+            "branch": "main",
+            "author": "Bob",
+            "commit_message": "candidate model with Jev",
+            "timestamp": "2026-08-21T10:00:00Z",
+        }
+        entry_2 = record_eval_run(report_2, history_file=hist_file, custom_git_meta=git_meta_2)
+        assert entry_2["model_name"] == "anthropic/claude-sonnet-4-5"
+        assert entry_2["token_summary"]["avg_tcer"] == 0.35
+        # TCER delta should be 0.35 - 0.42 = -0.07
+        assert entry_2["delta_from_previous"]["tcer_delta"] == -0.07
+        assert entry_2["delta_from_previous"]["cost_per_query_delta"] == -0.0007
+

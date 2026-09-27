@@ -20,6 +20,13 @@ def pytest_addoption(parser):
         help="Enable LLM-as-judge scoring (slower, requires API key)",
     )
     parser.addoption(
+        "--judge-backend",
+        action="store",
+        default="auto",
+        choices=["auto", "jev", "llm"],
+        help="Judge backend: 'jev' (TypeSafe Jev), 'llm' (generative chat model), or 'auto'",
+    )
+    parser.addoption(
         "--probe-capability",
         action="store_true",
         default=False,
@@ -84,6 +91,11 @@ def _probe_model_works() -> bool:
 @pytest.fixture(scope="session")
 def use_judge(request):
     return request.config.getoption("--judge")
+
+
+@pytest.fixture(scope="session")
+def judge_backend(request):
+    return request.config.getoption("--judge-backend")
 
 
 @pytest.fixture(scope="session")

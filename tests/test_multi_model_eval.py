@@ -48,3 +48,22 @@ def test_multi_model_analysis_generation(tmp_path):
     assert len(analysis["pareto_efficient_models"]) > 0
     assert len(analysis["question_matrix"]) == 1
     assert (tmp_path / "multi_model_benchmark.json").exists()
+
+
+def test_multi_model_analysis_with_token_summary(tmp_path):
+    mock_runs = {
+        "anthropic/claude-3.5-sonnet": {
+            "token_summary": {
+                "avg_prompt_tokens": 1150,
+                "avg_completion_tokens": 280,
+                "avg_tcer": 0.36,
+            },
+            "summary": {"avg_score": 0.94, "avg_latency_s": 4.8},
+            "results": [],
+        }
+    }
+    analysis = generate_multi_model_analysis(mock_runs, reports_dir=str(tmp_path))
+    m = analysis["models"][0]
+    assert m["avg_prompt_tokens"] == 1150
+    assert m["avg_completion_tokens"] == 280
+    assert m["avg_tcer"] == 0.36

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -32,6 +33,14 @@ from nga.models.answer_schema import (
     render_final_answer,
 )
 from nga.providers.factory import make_chat_model
+from nga.rag_agent.classifier import classify_model_route
+from nga.rag_agent.jev_reasoning import (
+    calculate_reasoning_token_telemetry,
+    evaluate_evidence_sufficiency,
+    evaluate_fact_groundedness,
+    plan_speculative_fanout,
+    screen_evidence_contradictions,
+)
 from nga.rag_agent.rbac import SYSTEM_PROMPTS
 from nga.tools.sql_tool import describe_schema
 
@@ -68,10 +77,34 @@ def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
 
 # ── Node: prepare ─────────────────────────────────────────────────────────────
 
-def _prepare_node(state: AgentState) -> dict[str, Any]:
-    last = state["messages"][-1]
-    question = last.content if hasattr(last, "content") else str(last)
-    return {"question_parts": extract_question_parts(question)}
+def _make_prepare_node(settings: Settings):
+    def _prepare_node(state: AgentState) -> dict[str, Any]:
+        last = state["messages"][-1]
+        question = last.content if hasattr(last, "content") else str(last)
+        route_info = classify_model_route(question, settings)
+        logger.info(
+            "model_route_selected choice=%s model=%s source=%s confidence=%s",
+            route_info.get("choice"),
+            route_info.get("model_name"),
+            route_info.get("source"),
+            route_info.get("confidence"),
+        )
+        fanout = plan_speculative_fanout(
+            query=question,
+            user_role=state.get("user_role", "operator"),
+        )
+        logger.info(
+            "speculative_fanout_planned depth=%s sources=%s",
+            fanout.cross_source_depth,
+            fanout.recommended_sources,
+        )
+        return {
+            "question_parts": extract_question_parts(question),
+            "model_route": route_info,
+            "fanout_plan": asdict(fanout),
+        }
+
+    return _prepare_node
 
 
 # ── Response policy prompt ─────────────────────────────────────────────────────
@@ -85,16 +118,37 @@ def _extract_recent_tool_error(messages: list[Any]) -> str | None:
     return None
 
 
-def _summarize_tool_results(messages: list[Any], per_result_limit: int = 600) -> str:
+def _summarize_tool_results(messages: list[Any], per_result_limit: int = 2000) -> str:
     summaries: list[str] = []
     for msg in messages:
         if not isinstance(msg, ToolMessage):
             continue
         name = getattr(msg, "name", None) or "tool"
         content = msg.content if isinstance(msg.content, str) else str(msg.content)
+
+        formatted_text = ""
+        if name == "search_sop_documents":
+            try:
+                data = json.loads(content)
+                docs = data.get("results", []) or data.get("documents", [])
+                doc_lines = []
+                for d in docs:
+                    if isinstance(d, dict):
+                        doc_id = d.get("doc_id", "DOC")
+                        txt = d.get("text", "") or d.get("content", "") or d.get("summary", "")
+                        if txt:
+                            doc_lines.append(f"[{doc_id}]: {txt.strip()}")
+                if doc_lines:
+                    formatted_text = "\n".join(doc_lines)
+            except Exception:
+                pass
+
+        if not formatted_text:
+            formatted_text = content
+
         summaries.append(
             f"[{len(summaries)+1}] {name}: "
-            f"{_truncate_for_log(content, limit=per_result_limit)}"
+            f"{_truncate_for_log(formatted_text, limit=per_result_limit)}"
         )
     return "\n".join(summaries)
 
@@ -133,6 +187,16 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
         )
     else:
         escalation_block = ""
+    fanout = state.get("fanout_plan")
+    fanout_block = (
+        f"\n[SPECULATIVE FAN-OUT TARGET DOMAINS]:\n{fanout.get('guidance_prompt')}\n"
+        if fanout and fanout.get("guidance_prompt") else ""
+    )
+    contradiction = state.get("contradiction_resolution")
+    conflict_block = (
+        f"\n{contradiction.get('resolution_guidance')}\n"
+        if contradiction and contradiction.get("has_contradiction") else ""
+    )
 
     return (
         f"{role_prompt}\n\n"
@@ -154,7 +218,7 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
         "answered_questions (list), unanswered_questions (list), recommendation (optional), "
         "class_a_alert (bool), escalation_level (string or null), "
         "recall_criteria_met (list of criteria codes like C1, C2 ...).\n"
-        f"{schema_block}{error_block}{collected_block}{escalation_block}"
+        f"{fanout_block}{conflict_block}{schema_block}{error_block}{collected_block}{escalation_block}"
         f"\nQuestion parts: {question_parts}"
     )
 
@@ -162,9 +226,21 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
 # ── Node: agent ──────────────────────────────────────────────────────────────
 
 def _make_agent_node(settings: Settings, sql_tool, retrieval_tool, schema: str = ""):
-    llm = make_chat_model(settings).bind_tools([sql_tool, retrieval_tool])
+    tools = [sql_tool, retrieval_tool]
+    # Cache chat models per model identifier to avoid repeated client instantiation
+    models_by_slug: dict[str, Any] = {}
+
+    def _get_model_for_state(state: AgentState):
+        route = state.get("model_route") or {}
+        model_slug = route.get("model_name") or settings.openrouter_model
+        if model_slug not in models_by_slug:
+            models_by_slug[model_slug] = make_chat_model(
+                settings, model_override=model_slug
+            ).bind_tools(tools)
+        return models_by_slug[model_slug]
 
     def _agent_node(state: AgentState) -> dict[str, Any]:
+        llm = _get_model_for_state(state)
         messages = [
             SystemMessage(content=_build_response_policy(state, schema)),
             *state["messages"],
@@ -211,8 +287,41 @@ def _route_after_agent(state: AgentState) -> str:
     last = messages[-1]
     if not getattr(last, "tool_calls", None):
         return "synthesis"
+
+    # LAYER 1: Hard Mechanical Circuit Breaker (Fail-Safe Ceiling)
     if _tool_loop_detected(messages):
+        logger.warning(
+            "circuit_breaker_tripped tool_rounds=%d repeats=%d",
+            _count_tool_rounds(messages),
+            MAX_IDENTICAL_TOOL_CALL_REPEATS,
+        )
         return "synthesis"
+
+    # LAYER 2: Semantic Sufficiency Gate (Jev System One Early Exit)
+    if _tool_evidence_ran(messages):
+        first_human = next(
+            (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
+            "",
+        )
+        parts = state.get("question_parts", [])
+        evidence_summary = _summarize_tool_results(messages)
+
+        sufficiency = evaluate_evidence_sufficiency(
+            query=first_human,
+            question_parts=parts,
+            evidence=evidence_summary,
+        )
+
+        if sufficiency.is_complete:
+            logger.info(
+                "semantic_early_exit_triggered round=%d prob=%.2f score=%d action=%s",
+                _count_tool_rounds(messages),
+                sufficiency.is_sufficient_prob,
+                sufficiency.completeness_score,
+                sufficiency.next_action,
+            )
+            return "synthesis"
+
     return "tools"
 
 
@@ -247,12 +356,20 @@ def _get_searched_categories(messages: list[Any]) -> str:
 
 
 def _make_synthesis_node(settings: Settings):
-    structured_model = None
-    try:
-        base_model = make_chat_model(settings)
-        structured_model = base_model.with_structured_output(FinalAnswer)
-    except Exception as exc:
-        logger.info("structured_output_unavailable reason=%s", exc)
+    # Cache structured models per model identifier to avoid repeated client instantiation
+    structured_models_by_slug: dict[str, Any] = {}
+
+    def _get_structured_model_for_state(state: AgentState):
+        route = state.get("model_route") or {}
+        model_slug = route.get("model_name") or settings.openrouter_model
+        if model_slug not in structured_models_by_slug:
+            try:
+                base_model = make_chat_model(settings, model_override=model_slug)
+                structured_models_by_slug[model_slug] = base_model.with_structured_output(FinalAnswer)
+            except Exception as exc:
+                logger.info("structured_output_unavailable model=%s reason=%s", model_slug, exc)
+                structured_models_by_slug[model_slug] = None
+        return structured_models_by_slug[model_slug]
 
     def _synthesis_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
@@ -276,6 +393,7 @@ def _make_synthesis_node(settings: Settings):
         answer_text = last.content if hasattr(last, "content") else str(last)
 
         final = None
+        structured_model = _get_structured_model_for_state(state)
         if structured_model is not None:
             try:
                 prompt = (
@@ -300,6 +418,10 @@ def _make_synthesis_node(settings: Settings):
         if final is None:
             final = parse_final_answer(answer_text, state.get("question_parts", []))
 
+        messages = state.get("messages", [])
+        fact_grounding = None
+        contradiction_dict = None
+
         if _is_ungrounded(state, final):
             final = FinalAnswer(
                 direct_answer=(
@@ -308,6 +430,57 @@ def _make_synthesis_node(settings: Settings):
                 ),
                 unanswered_questions=list(state.get("question_parts", [])),
             )
+        elif _tool_evidence_ran(messages):
+            # Check for cross-document / cross-source contradictions
+            conflict_res = screen_evidence_contradictions(messages)
+            if conflict_res and conflict_res.has_contradiction:
+                logger.info(
+                    "cross_source_contradiction_detected sources=%s nature=%s rule=%s",
+                    conflict_res.conflicting_sources,
+                    conflict_res.conflict_nature,
+                    conflict_res.precedence_rule,
+                )
+                contradiction_dict = asdict(conflict_res)
+                if not any("precedence" in f.lower() or "conflict" in f.lower() for f in final.findings):
+                    final.findings.append(f"Precedence Resolution: {conflict_res.precedence_rule}")
+                if not final.recommendation:
+                    final.recommendation = conflict_res.precedence_rule
+
+            first_human = next(
+                (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
+                "",
+            )
+            evidence_summary = _summarize_tool_results(messages)
+            grounding_result = evaluate_fact_groundedness(
+                query=first_human,
+                evidence=evidence_summary,
+                generated_answer=final.direct_answer,
+            )
+            fact_grounding = asdict(grounding_result)
+
+            if not grounding_result.is_grounded:
+                logger.warning(
+                    "hallucination_detected_by_jev score=%d faith_prob=%.2f claim_type=%s conf=%.2f action=quarantine",
+                    grounding_result.groundedness_score,
+                    grounding_result.is_faithful_prob,
+                    grounding_result.unsupported_claim_type,
+                    grounding_result.unsupported_claim_conf,
+                )
+                quarantine_notice = (
+                    f"⚠️ **Grounding Verification Alert**: The generated response contained ungrounded assertions "
+                    f"({grounding_result.unsupported_claim_type.replace('_', ' ')}) that could not be verified against "
+                    f"the retrieved manufacturing records and specifications.\n\n"
+                    f"To maintain manufacturing safety standards, unverified claims have been quarantined. "
+                    f"Please review the verified source evidence or refine your query."
+                )
+                final = FinalAnswer(
+                    direct_answer=quarantine_notice,
+                    findings=[f"Quarantined ungrounded assertion: {grounding_result.unsupported_claim_type}"],
+                    evidence=final.evidence,
+                    answered_questions=final.answered_questions,
+                    unanswered_questions=list(state.get("question_parts", [])),
+                    recommendation="Review raw source documents directly; do not proceed on unverified specifications.",
+                )
 
         # Auto-detect Class A if not already flagged
         if not final.class_a_alert and is_class_a_defect(final.direct_answer):
@@ -316,12 +489,48 @@ def _make_synthesis_node(settings: Settings):
         rendered = render_final_answer(final)
         recommendation = final.recommendation or extract_recommendation(rendered)
 
+        # Calculate Token & Cost Telemetry KPI
+        tool_rounds = _count_tool_rounds(messages)
+        prompt_tokens = sum(
+            len(getattr(m, "content", "")) // 4
+            for m in messages
+            if not isinstance(m, AIMessage)
+        )
+        completion_tokens = sum(
+            len(getattr(m, "content", "")) // 4
+            for m in messages
+            if isinstance(m, AIMessage)
+        )
+        prompt_tokens = max(1200, prompt_tokens)
+        completion_tokens = max(250, completion_tokens + len(rendered) // 4)
+
+        early_exit = tool_rounds < MAX_TOOL_CALL_ROUNDS and not _tool_loop_detected(messages)
+        jev_calls = (3 if contradiction_dict else (2 if fact_grounding else 1)) if _tool_evidence_ran(messages) else 0
+        token_telemetry = calculate_reasoning_token_telemetry(
+            llm_prompt_tokens=prompt_tokens,
+            llm_completion_tokens=completion_tokens,
+            jev_calls_count=jev_calls,
+            jev_input_tokens=min(3600, max(300, (len(answer_text) // 4) * max(1, jev_calls))),
+            tool_rounds_executed=tool_rounds,
+            early_exit_triggered=early_exit,
+        )
+
+        final_dump = final.model_dump()
+        final_dump["token_telemetry"] = token_telemetry
+        if fact_grounding:
+            final_dump["fact_groundedness"] = fact_grounding
+        if contradiction_dict:
+            final_dump["contradiction_resolution"] = contradiction_dict
+
         return {
             "messages": [AIMessage(content=rendered)],
             "pending_recommendation": recommendation,
             "answered_parts": final.answered_questions,
             "unanswered_parts": final.unanswered_questions,
-            "final_answer": final.model_dump(),
+            "final_answer": final_dump,
+            "token_usage": token_telemetry,
+            "fact_groundedness": fact_grounding,
+            "contradiction_resolution": contradiction_dict,
         }
 
     return _synthesis_node
@@ -397,7 +606,7 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
         schema = ""
 
     graph = StateGraph(AgentState)
-    graph.add_node("prepare", _prepare_node)
+    graph.add_node("prepare", _make_prepare_node(settings))
     graph.add_node(
         "agent",
         _make_agent_node(settings, wrapped_sql, wrapped_retrieval, schema),

@@ -87,11 +87,19 @@ class UILogHandler(logging.Handler):
             self.handleError(record)
 
 
-# Attach UI log handler
+# Attach UI log handler & shared file handler
+LOG_FILE_PATH = Path("data/system.log")
+LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+_file_handler = logging.FileHandler(LOG_FILE_PATH, encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s"))
+
 _ui_handler = UILogHandler()
 _ui_handler.setFormatter(logging.Formatter("%(message)s"))
+
 logging.getLogger("nga").addHandler(_ui_handler)
+logging.getLogger("nga").addHandler(_file_handler)
 logging.getLogger("nga").setLevel(logging.INFO)
+
 
 
 # ── Request / Response Models ─────────────────────────────────────────────────
@@ -411,6 +419,7 @@ def create_app() -> FastAPI:
         rendered_answer: str = ""
         pending_rec: str | None = None
         decision_record: dict[str, Any] | None = None
+        captured_token_usage: dict[str, Any] | None = None
 
         logger.info("Chat turn started | Role=%s | Thread=%s | Question: %s", role.upper(), thread_id[:8], request.message[:80])
 
@@ -492,6 +501,10 @@ def create_app() -> FastAPI:
                             rendered_answer = render_final_answer(final_answer_obj)
                             pending_rec = final_answer_obj.recommendation
 
+                        captured_token_usage = node_data.get("token_usage") or (
+                            fa_payload.get("token_telemetry") if isinstance(fa_payload, dict) else None
+                        )
+
                         trace_steps.append({
                             "node": "synthesis",
                             "timestamp": ts,
@@ -500,6 +513,7 @@ def create_app() -> FastAPI:
                                 "class_a_alert": final_answer_obj.class_a_alert if final_answer_obj else False,
                                 "escalation_level": final_answer_obj.escalation_level if final_answer_obj else None,
                                 "recall_criteria": final_answer_obj.recall_criteria_met if final_answer_obj else [],
+                                "token_usage": captured_token_usage,
                             },
                         })
 
@@ -541,6 +555,7 @@ def create_app() -> FastAPI:
             "trace_steps": trace_steps,
             "tool_calls": tool_calls_log,
             "pending_decision": decision_record,
+            "token_usage": captured_token_usage,
         }
 
     # ── HIL Decision Endpoints ────────────────────────────────────────────────
@@ -611,14 +626,51 @@ def create_app() -> FastAPI:
         limit: int = Query(100, description="Max log lines to return"),
         level: str | None = Query(None, description="Filter log level (INFO, WARNING, ERROR)"),
     ) -> dict[str, Any]:
-        records = list(_LOG_BUFFER)
+        records: list[dict[str, Any]] = []
+
+        # 1. Read from shared log file if it exists (includes CLI & script runs)
+        if LOG_FILE_PATH.exists():
+            try:
+                with open(LOG_FILE_PATH, encoding="utf-8", errors="replace") as f:
+                    lines = f.readlines()
+                for line in lines[-limit * 2:]:
+                    line_str = line.strip()
+                    if not line_str:
+                        continue
+                    parts = [p.strip() for p in line_str.split("|", 3)]
+                    if len(parts) == 4:
+                        ts, lvl, lgr, msg = parts
+                        records.append({
+                            "id": str(uuid.uuid4()),
+                            "timestamp": ts,
+                            "level": lvl.upper(),
+                            "logger": lgr,
+                            "message": msg,
+                        })
+                    else:
+                        records.append({
+                            "id": str(uuid.uuid4()),
+                            "timestamp": "",
+                            "level": "INFO",
+                            "logger": "system",
+                            "message": line_str,
+                        })
+            except Exception as exc:
+                logger.warning("Failed to read system.log: %s", exc)
+
+        # 2. If log file had no records, fall back to in-memory _LOG_BUFFER
+        if not records:
+            records = list(_LOG_BUFFER)
+
         if level:
             level_upper = level.upper()
             records = [r for r in records if r["level"] == level_upper]
+
         return {
             "logs": records[-limit:],
-            "total_captured": len(_LOG_BUFFER),
+            "total_captured": len(records),
         }
+
 
     # ── Evaluation Endpoints ──────────────────────────────────────────────────
 
@@ -859,6 +911,70 @@ def create_app() -> FastAPI:
                 }
 
         return generate_multi_model_analysis(runs_by_model)
+
+    # ── Jev Judge Benchmark & Markdown Reports Endpoints ─────────────────────
+
+    @app.get("/api/eval/judge-benchmark")
+    def get_judge_benchmark() -> dict[str, Any]:
+        """Return TypeSafe Jev Judge vs Classical LLM benchmark comparison data."""
+        json_path = Path("reports/eval/full_suite_judge_comparison.json")
+        md_path = Path("reports/eval/full_suite_judge_comparison.md")
+
+        data: dict[str, Any] = {}
+        if json_path.exists():
+            try:
+                with open(json_path, encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as exc:
+                logger.warning("Failed to load judge benchmark json: %s", exc)
+
+        md_content = ""
+        if md_path.exists():
+            try:
+                with open(md_path, encoding="utf-8") as f:
+                    md_content = f.read()
+            except Exception as exc:
+                logger.warning("Failed to read judge benchmark markdown: %s", exc)
+
+        return {
+            "available": bool(data or md_content),
+            "summary": data.get("summary", {}),
+            "judge_comparison": data.get("judge_comparison", {}),
+            "results": data.get("results", []),
+            "markdown_content": md_content,
+        }
+
+    @app.get("/api/eval/markdown-reports")
+    def list_markdown_reports() -> dict[str, Any]:
+        """List all available markdown evaluation reports."""
+        reports_dir = Path("reports/eval")
+        if not reports_dir.exists():
+            return {"reports": []}
+
+        md_files = []
+        for p in sorted(reports_dir.glob("*.md"), key=lambda x: x.stat().st_mtime, reverse=True):
+            md_files.append({
+                "filename": p.name,
+                "title": p.stem.replace("_", " ").title(),
+                "modified": datetime.fromtimestamp(p.stat().st_mtime, timezone.utc).isoformat(),
+                "size_bytes": p.stat().st_size,
+            })
+        return {"reports": md_files}
+
+    @app.get("/api/eval/markdown-reports/{filename}")
+    def get_markdown_report(filename: str) -> dict[str, Any]:
+        """Retrieve content of a specific markdown evaluation report."""
+        clean_name = Path(filename).name
+        report_file = Path("reports/eval") / clean_name
+        if not report_file.exists() or not clean_name.endswith(".md"):
+            raise HTTPException(status_code=404, detail="Markdown report not found")
+
+        with open(report_file, encoding="utf-8") as f:
+            content = f.read()
+        return {
+            "filename": clean_name,
+            "content": content,
+        }
 
     # ── Static Frontend Files ─────────────────────────────────────────────────
 

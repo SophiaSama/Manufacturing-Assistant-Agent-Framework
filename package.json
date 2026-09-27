@@ -24,6 +24,7 @@
   },
   "homepage": "https://github.com/SophiaSama/Manufacturing-Assistant-Agent-Framework#readme",
   "dependencies": {
+    "@typesafe-ai/sdk": "^0.6.0",
     "ai": "^7.0.107"
   }
 }
