@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import os
 from typing import Any
-
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
 from dotenv import load_dotenv
 
 from nga.evaluation.judge import (
     JevJudgeAPIError,
-    JudgeAPIError,
     LLMJudgeAPIError,
     evaluate_with_jev,
     is_api_error,
@@ -285,6 +283,7 @@ def test_make_llm_judge_returns_zero_on_malformed_text():
 def test_full_suite_judge_comparison_skips_on_preflight_api_error():
     """Verify full_suite_judge_comparison skips execution and NEVER calls Jev when LLM judge fails with API error."""
     import pytest
+
     from scripts.full_suite_judge_comparison import main
 
     mock_llm_judge = MagicMock(side_effect=LLMJudgeAPIError("Key limit exceeded (weekly limit)", status_code=403))
@@ -301,6 +300,7 @@ def test_full_suite_judge_comparison_skips_on_preflight_api_error():
 def test_full_suite_judge_comparison_aborts_mid_suite_on_api_error():
     """Verify full_suite_judge_comparison aborts immediately and does not call Jev when LLM judge fails during run."""
     import pytest
+
     from scripts.full_suite_judge_comparison import main
 
     calls = 0
@@ -342,6 +342,7 @@ def test_make_jev_judge_raises_api_error():
 def test_full_suite_judge_comparison_skips_on_jev_preflight_api_error():
     """Verify full_suite_judge_comparison skips execution when Jev judge fails during preflight probe."""
     import pytest
+
     from scripts.full_suite_judge_comparison import main
 
     mock_llm_judge = MagicMock(return_value=5)
@@ -356,6 +357,7 @@ def test_full_suite_judge_comparison_skips_on_jev_preflight_api_error():
 def test_full_suite_judge_comparison_skips_when_api_keys_missing(monkeypatch):
     """Verify full_suite_judge_comparison skips when required API keys are missing from environment."""
     import pytest
+
     from scripts.full_suite_judge_comparison import main
 
     monkeypatch.setenv("TYPESAFE_API_KEY", "")

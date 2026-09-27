@@ -15,7 +15,6 @@ from dotenv import load_dotenv
 
 from nga.evaluation.ci_tracker import record_eval_run
 from nga.evaluation.judge import (
-    LLMJudgeAPIError,
     evaluate_with_jev,
     is_api_error,
     make_jev_judge,
