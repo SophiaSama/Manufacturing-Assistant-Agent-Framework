@@ -62,6 +62,7 @@ from nga.models.answer_schema import (
 from nga.providers.factory import make_embeddings
 from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
+from nga.tracing import configure_tracing
 
 logger = logging.getLogger("nga.ui.server")
 
@@ -165,6 +166,7 @@ class AppContext:
             return
 
         self.settings = Settings.from_env()
+        configure_tracing(self.settings)
         init_decision_log(self.settings.app_state_db_path)
 
         self.cache = make_cache_from_settings(self.settings, env="prod")

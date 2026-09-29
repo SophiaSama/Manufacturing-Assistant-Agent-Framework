@@ -43,6 +43,11 @@ from nga.rag_agent.jev_reasoning import (
 )
 from nga.rag_agent.rbac import SYSTEM_PROMPTS
 from nga.tools.sql_tool import describe_schema
+from nga.tracing import (
+    attach_token_telemetry,
+    attach_trace_metadata,
+    traceable_if_enabled,
+)
 
 logger = logging.getLogger("nga.orchestrator")
 
@@ -56,6 +61,7 @@ def _truncate_for_log(value: Any, limit: int = 400) -> str:
 
 
 def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
+    @traceable_if_enabled(run_type="tool", name=f"tool:{tool_obj.name}")
     def _logged(**kwargs):
         logger.info("tool_call_start name=%s input=%s", tool_obj.name, _truncate_for_log(kwargs))
         try:
@@ -78,6 +84,7 @@ def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
 # ── Node: prepare ─────────────────────────────────────────────────────────────
 
 def _make_prepare_node(settings: Settings):
+    @traceable_if_enabled(run_type="chain", name="orchestrator.prepare")
     def _prepare_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
         question = last.content if hasattr(last, "content") else str(last)
@@ -259,6 +266,7 @@ def _make_agent_node(settings: Settings, sql_tool, retrieval_tool, schema: str =
             ).bind_tools(tools)
         return models_by_slug[model_slug]
 
+    @traceable_if_enabled(run_type="chain", name="orchestrator.agent")
     def _agent_node(state: AgentState) -> dict[str, Any]:
         llm = _get_model_for_state(state)
         messages = [
@@ -302,6 +310,7 @@ def _tool_loop_detected(messages: list[Any]) -> bool:
     return False
 
 
+@traceable_if_enabled(run_type="chain", name="orchestrator.route_after_agent")
 def _route_after_agent(state: AgentState) -> str:
     messages = state["messages"]
     last = messages[-1]
@@ -391,6 +400,7 @@ def _make_synthesis_node(settings: Settings):
                 structured_models_by_slug[model_slug] = None
         return structured_models_by_slug[model_slug]
 
+    @traceable_if_enabled(run_type="chain", name="orchestrator.synthesis")
     def _synthesis_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
 
@@ -535,6 +545,15 @@ def _make_synthesis_node(settings: Settings):
             early_exit_triggered=early_exit,
         )
 
+        attach_token_telemetry(token_telemetry)
+        attach_trace_metadata(
+            class_a_alert=final.class_a_alert,
+            escalation_level=final.escalation_level,
+            recall_criteria_met=final.recall_criteria_met,
+            early_exit_triggered=early_exit,
+            tool_rounds_executed=tool_rounds,
+        )
+
         final_dump = final.model_dump()
         final_dump["token_telemetry"] = token_telemetry
         if fact_grounding:
@@ -559,6 +578,7 @@ def _make_synthesis_node(settings: Settings):
 # ── Node: hitl ───────────────────────────────────────────────────────────────
 
 def _make_hitl_node(app_state_db_path: str, approver=None):
+    @traceable_if_enabled(run_type="chain", name="orchestrator.hitl")
     def _hitl_node(state: AgentState) -> dict[str, Any]:
         recommendation = state.get("pending_recommendation")
         if not recommendation:

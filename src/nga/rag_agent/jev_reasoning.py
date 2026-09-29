@@ -17,6 +17,8 @@ from typing import Any
 
 from langchain_core.messages import ToolMessage
 
+from nga.tracing import traceable_if_enabled
+
 logger = logging.getLogger(__name__)
 
 # Jev Model Pricing ($ per 1M tokens)
@@ -105,6 +107,7 @@ def _extract_noul_prob(ans: Any) -> float:
     return 0.0
 
 
+@traceable_if_enabled(run_type="chain", name="jev.evaluate_evidence_sufficiency")
 def evaluate_evidence_sufficiency(
     query: str,
     question_parts: list[str],
@@ -226,6 +229,7 @@ def evaluate_evidence_sufficiency(
         )
 
 
+@traceable_if_enabled(run_type="chain", name="jev.evaluate_fact_groundedness")
 def evaluate_fact_groundedness(
     query: str,
     evidence: str,
@@ -375,6 +379,7 @@ def evaluate_fact_groundedness(
         )
 
 
+@traceable_if_enabled(run_type="chain", name="jev.calculate_reasoning_token_telemetry")
 def calculate_reasoning_token_telemetry(
     llm_prompt_tokens: int,
     llm_completion_tokens: int,
@@ -460,6 +465,7 @@ def calculate_reasoning_token_telemetry(
     }
 
 
+@traceable_if_enabled(run_type="chain", name="jev.plan_speculative_fanout")
 def plan_speculative_fanout(
     query: str,
     user_role: str = "operator",
@@ -637,6 +643,7 @@ def _get_precedence_rank(source_type: str, citation: str) -> int:
     return 4
 
 
+@traceable_if_enabled(run_type="chain", name="jev.detect_cross_source_contradiction")
 def detect_cross_source_contradiction(
     source_a: dict[str, str],
     source_b: dict[str, str],
@@ -752,6 +759,7 @@ def detect_cross_source_contradiction(
         )
 
 
+@traceable_if_enabled(run_type="chain", name="jev.screen_evidence_contradictions")
 def screen_evidence_contradictions(
     messages: list[Any],
     api_key: str | None = None,

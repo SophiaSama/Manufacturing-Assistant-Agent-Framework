@@ -23,6 +23,7 @@ from nga.models.answer_schema import (
 from nga.providers.factory import make_embeddings
 from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
+from nga.tracing import configure_tracing
 
 logger = logging.getLogger("nga.cli")
 
@@ -121,6 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.WARNING))
 
     settings = Settings.from_env()
+    configure_tracing(settings)
     init_decision_log(settings.app_state_db_path)
 
     cache = make_cache_from_settings(settings, env="prod")
