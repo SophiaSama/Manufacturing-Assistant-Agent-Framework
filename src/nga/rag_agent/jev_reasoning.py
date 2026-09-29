@@ -282,11 +282,18 @@ def evaluate_fact_groundedness(
             "is_faithful": Noul(
                 instructions=(
                     "Is every factual claim, numerical specification, part ID, and procedure "
-                    "in generated_answer fully supported by source_evidence with zero hallucinated details?"
+                    "in generated_answer fully supported by source_evidence with zero hallucinated details? "
+                    "IMPORTANT: Numerical values, row counts, dates, IDs, and measurements returned by "
+                    "SQL database queries (marked as [SQL QUERY RESULT] in source_evidence) are verified "
+                    "database outputs and count as valid source evidence."
                 )
             ),
             "groundedness": Score(
-                instructions="Rate the groundedness of generated_answer against source_evidence on a 1-5 scale.",
+                instructions=(
+                    "Rate the groundedness of generated_answer against source_evidence on a 1-5 scale. "
+                    "Data returned by SQL database queries (marked [SQL QUERY RESULT]) is authoritative "
+                    "source evidence — numbers, counts, and IDs from query results are NOT fabricated."
+                ),
                 criteria=[
                     "1: Severe hallucination; invents specifications, tolerances, or procedures not in source evidence.",
                     "2: Major unsupported claims; contains fabricated numbers or contradictory statements.",
@@ -296,10 +303,18 @@ def evaluate_fact_groundedness(
                 ],
             ),
             "unsupported_claim_type": Choice(
-                instructions="Categorize any ungrounded assertions in generated_answer.",
+                instructions=(
+                    "Categorize any ungrounded assertions in generated_answer. "
+                    "IMPORTANT: Numerical values, counts, dates, IDs, and measurements that appear in "
+                    "SQL database query results within source_evidence are verified data — do NOT "
+                    "categorize them as invented_numeric_spec."
+                ),
                 criteria={
                     "none": "All assertions are fully grounded in source_evidence.",
-                    "invented_numeric_spec": "Fabricated torque, temperature, pressure, dimension, or limit.",
+                    "invented_numeric_spec": (
+                        "Fabricated torque, temperature, pressure, dimension, or limit that does NOT "
+                        "appear in source_evidence. Numbers returned by SQL query results are NOT fabricated."
+                    ),
                     "invented_citation": "Cited a document, SOP ID, or database record not in source_evidence.",
                     "unsupported_safety_assertion": "Unverified claim regarding Class A safety, severity, or recall status.",
                 },
@@ -320,7 +335,7 @@ def evaluate_fact_groundedness(
 
         # Calibrated grounding threshold:
         # Pass if groundedness score >= 3 AND no confident ungrounded claim AND (prob >= 0.35 or score >= 4)
-        has_ungrounded_claim = (claim_type != "none" and claim_conf >= 0.75)
+        has_ungrounded_claim = (claim_type != "none" and claim_conf >= 0.85)
         is_grounded = (score_val >= 3) and (prob >= 0.35 or score_val >= 4) and not has_ungrounded_claim
 
         logger.info(

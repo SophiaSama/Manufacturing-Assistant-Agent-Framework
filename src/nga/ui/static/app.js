@@ -661,21 +661,62 @@
       `;
     }
 
-    // 6. Actionable Recommendation with in-chat HIL Trigger
+    // 6. Actionable Recommendation with inline HIL Controls
     if (fa.recommendation) {
       const isClassA = Boolean(fa.class_a_alert);
       const pendingDecision = data.pending_decision;
+      const decId = pendingDecision ? pendingDecision.id : "";
+      const decIdAttr = decId ? `data-id="${decId}"` : "";
+
       html += `
         <div class="recommendation-action-card">
           <div class="rec-title">Actionable Recommendation</div>
           <div class="rec-text">${escapeHTML(fa.recommendation)}</div>
+          
           <div class="rec-btn-row">
-            <button class="btn btn-sm btn-outline inchat-open-hil-btn" 
+            <button class="btn btn-sm btn-outline inchat-toggle-hil-btn" 
                     data-rec="${encodeURIComponent(fa.recommendation)}" 
                     data-classa="${isClassA}" 
-                    data-id="${pendingDecision ? pendingDecision.id : ""}">
-              🛡️ Authorize / Review in Safety Gate
+                    ${decIdAttr}>
+              🛡️ Authorize / Review Inline
             </button>
+          </div>
+
+          <div class="inline-hil-form" style="display: none;" ${decIdAttr}>
+            <div class="inline-hil-header">
+              <span class="inline-hil-badge">🛡️ Safety Action Review</span>
+              ${decId ? `<span class="inline-hil-id">#${decId}</span>` : ""}
+              ${isClassA ? `<span class="badge badge-danger">⚠️ CLASS A DEFECT</span>` : ""}
+            </div>
+
+            ${
+              isClassA
+                ? `<div class="safety-alert-banner class-a mb-2" style="font-size: 0.775rem; padding: 0.4rem 0.6rem;">
+                     Class A Safety-Critical: Approver ID/Name mandatory. Rejections require documented reason.
+                   </div>`
+                : ""
+            }
+
+            <div class="inline-hil-fields">
+              <div class="form-group mb-2">
+                <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">
+                  Approver ID / Name ${isClassA ? '<span class="text-danger">*</span>' : ""}
+                </label>
+                <input type="text" class="form-control form-control-sm inline-hil-approver" placeholder="e.g. ENG-4402 or John Doe">
+              </div>
+              <div class="form-group mb-2">
+                <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">
+                  Justification / Note ${isClassA ? '<span class="text-muted">(Required for Class A rejection)</span>' : ""}
+                </label>
+                <textarea class="form-control form-control-sm inline-hil-reason" rows="2" placeholder="Engineering justification or reason..."></textarea>
+              </div>
+            </div>
+
+            <div class="inline-hil-actions">
+              <button class="btn btn-sm btn-outline inline-hil-cancel-btn">Cancel</button>
+              <button class="btn btn-sm btn-danger inline-hil-reject-btn" data-classa="${isClassA}" ${decIdAttr}>❌ Reject</button>
+              <button class="btn btn-sm btn-success inline-hil-approve-btn" data-classa="${isClassA}" ${decIdAttr}>✅ Authorize</button>
+            </div>
           </div>
         </div>
       `;
@@ -710,21 +751,111 @@
     els.chatMessages.appendChild(div);
     scrollChatToBottom();
 
-    // Attach in-chat HIL trigger
-    div.querySelectorAll(".inchat-open-hil-btn").forEach((btn) => {
+    // Attach inline HIL triggers
+    div.querySelectorAll(".inchat-toggle-hil-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
-        const recText = decodeURIComponent(e.target.getAttribute("data-rec"));
-        const classA = e.target.getAttribute("data-classa") === "true";
-        const decId = e.target.getAttribute("data-id") || null;
-        openHILModal({
-          id: decId,
-          recommendation: recText,
-          class_a_alert: classA,
-          category: "SAFETY_ACTION",
-          user_role: data.role || state.activeRole,
-        });
+        const card = e.target.closest(".recommendation-action-card");
+        if (!card) return;
+        const form = card.querySelector(".inline-hil-form");
+        const btnRow = card.querySelector(".rec-btn-row");
+        if (form) {
+          form.style.display = "block";
+          if (btnRow) btnRow.style.display = "none";
+          scrollChatToBottom();
+        }
       });
     });
+
+    div.querySelectorAll(".inline-hil-cancel-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const card = e.target.closest(".recommendation-action-card");
+        if (!card) return;
+        const form = card.querySelector(".inline-hil-form");
+        const btnRow = card.querySelector(".rec-btn-row");
+        if (form) form.style.display = "none";
+        if (btnRow) btnRow.style.display = "flex";
+      });
+    });
+
+    div.querySelectorAll(".inline-hil-approve-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => handleInlineHILSubmit(e.target, "approved"));
+    });
+
+    div.querySelectorAll(".inline-hil-reject-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => handleInlineHILSubmit(e.target, "rejected"));
+    });
+  }
+
+  async function handleInlineHILSubmit(buttonEl, action) {
+    const card = buttonEl.closest(".recommendation-action-card");
+    if (!card) return;
+    const form = card.querySelector(".inline-hil-form");
+    const decId = buttonEl.getAttribute("data-id") || (form ? form.getAttribute("data-id") : null);
+    const isClassA = buttonEl.getAttribute("data-classa") === "true";
+
+    const approverInput = form ? form.querySelector(".inline-hil-approver") : null;
+    const reasonInput = form ? form.querySelector(".inline-hil-reason") : null;
+
+    const approver = approverInput ? approverInput.value.trim() : "";
+    const reason = reasonInput ? reasonInput.value.trim() : "";
+
+    if (isClassA && !approver) {
+      alert("Approver ID / Name is mandatory for Class A Safety-Critical items.");
+      if (approverInput) approverInput.focus();
+      return;
+    }
+
+    if (action === "rejected" && isClassA && !reason) {
+      alert("Mandatory justification note is required when rejecting a Class A recommendation.");
+      if (reasonInput) reasonInput.focus();
+      return;
+    }
+
+    if (!decId) {
+      // If decision wasn't saved in app_state DB yet, notify user
+      alert("No pending decision ID registered for this recommendation.");
+      return;
+    }
+
+    buttonEl.disabled = true;
+    const originalText = buttonEl.textContent;
+    buttonEl.textContent = "Submitting...";
+
+    try {
+      const res = await fetch(`/api/decisions/${decId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: action,
+          approver: approver,
+          reason: reason,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Action failed");
+      }
+
+      // Replace inline form with confirmation badge
+      if (form) {
+        const badgeColor = action === "approved" ? "badge-success" : "badge-danger";
+        const icon = action === "approved" ? "✓" : "✕";
+        const noteStr = approver ? ` by <strong>${escapeHTML(approver)}</strong>` : "";
+        form.innerHTML = `
+          <div style="padding: 0.5rem 0; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span class="badge ${badgeColor}">${icon} ${action.toUpperCase()}</span>
+            <span style="color: var(--text-muted); font-size: 0.8rem;">Decision #${decId}${noteStr}</span>
+          </div>
+        `;
+      }
+
+      fetchDecisions();
+    } catch (err) {
+      alert(`Error updating decision: ${err.message}`);
+      buttonEl.disabled = false;
+      buttonEl.textContent = originalText;
+    }
   }
 
   function appendSystemError(text) {

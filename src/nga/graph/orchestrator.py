@@ -142,6 +142,26 @@ def _summarize_tool_results(messages: list[Any], per_result_limit: int = 2000) -
                     formatted_text = "\n".join(doc_lines)
             except Exception:
                 pass
+        elif name == "query_nga_database":
+            try:
+                data = json.loads(content)
+                sql_query = data.get("query", "")
+                rows = data.get("rows", [])
+                row_count = data.get("row_count", len(rows))
+                tables = data.get("tables", [])
+                lines = [f"[SQL QUERY RESULT] Query: {sql_query}"]
+                for i, row in enumerate(rows[:20], 1):
+                    if isinstance(row, dict):
+                        pairs = ", ".join(f"{k}={v}" for k, v in row.items())
+                        lines.append(f"  Row {i}: {pairs}")
+                if row_count > 20:
+                    lines.append(f"  ... ({row_count - 20} more rows)")
+                lines.append(
+                    f"({row_count} row(s) returned from tables: {', '.join(tables) if tables else 'N/A'})"
+                )
+                formatted_text = "\n".join(lines)
+            except Exception:
+                pass
 
         if not formatted_text:
             formatted_text = content
