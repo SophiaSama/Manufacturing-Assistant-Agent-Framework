@@ -560,8 +560,8 @@ def _make_synthesis_node(settings: Settings):
                     final = structured
                 elif isinstance(structured, dict):
                     final = FinalAnswer.model_validate(structured)
-            except Exception:
-                logger.exception("structured_output_parse_failed")
+            except Exception as exc:
+                logger.warning("structured_output_parse_failed: %s; falling back to heuristic parsing", exc)
 
         if final is None:
             final = parse_final_answer(answer_text, state.get("question_parts", []))

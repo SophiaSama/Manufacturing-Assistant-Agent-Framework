@@ -359,7 +359,17 @@ def test_synthesis_node_with_jev_grounding_quarantine(monkeypatch):
         "fact_groundedness": None,
     }
 
-    with patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_ground:
+    mock_llm = MagicMock()
+    mock_structured = MagicMock()
+    mock_structured.invoke.return_value = {
+        "direct_answer": "The torque is 500 Nm.",
+        "findings": ["Fake spec"],
+        "evidence": [{"source_type": "document", "citation": "SOP-101"}],
+    }
+    mock_llm.with_structured_output.return_value = mock_structured
+
+    with patch("nga.graph.orchestrator.make_chat_model", return_value=mock_llm), \
+         patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_ground:
         mock_ground.return_value = FactGroundednessResult(
             is_faithful=False,
             is_faithful_prob=0.10,
@@ -705,8 +715,18 @@ def test_synthesis_bypasses_grounding_for_negative_answer(monkeypatch):
         "contradiction_resolution": None,
     }
 
+    mock_llm = MagicMock()
+    mock_structured = MagicMock()
+    mock_structured.invoke.return_value = {
+        "direct_answer": "No critical issues occurred in that shift.",
+        "findings": [],
+        "evidence": [],
+    }
+    mock_llm.with_structured_output.return_value = mock_structured
+
     # evaluate_fact_groundedness should NOT even be called for negative/fallback answers
-    with patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_grounding:
+    with patch("nga.graph.orchestrator.make_chat_model", return_value=mock_llm), \
+         patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_grounding:
         res = synthesis_node(state)
         mock_grounding.assert_not_called()
 
