@@ -92,7 +92,11 @@
                 <span class="banner-badge" id="banner-role-tag">OPERATOR CLEARANCE</span>
                 <span class="banner-desc" id="banner-role-desc">Assembly procedures, torque specifications, and operator SOPs.</span>
               </div>
-              <button class="btn btn-sm btn-outline" id="btn-quick-switch-role">Switch Role</button>
+              <div class="role-banner-actions" style="display: flex; gap: 8px; align-items: center;">
+                <span class="session-badge" id="session-badge" style="font-size: 0.75rem; font-family: monospace; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.08); color: #94a3b8;" title="Current Session Thread ID">Session: New</span>
+                <button class="btn btn-sm btn-primary" id="btn-new-chat" title="Start a fresh independent conversation session">➕ New Chat</button>
+                <button class="btn btn-sm btn-outline" id="btn-quick-switch-role">Switch Role</button>
+              </div>
             </div>
 
             <div class="chat-messages-container" id="chat-messages">

@@ -49,6 +49,8 @@
     // Chat
     chatInput: document.getElementById("chat-input"),
     btnSendChat: document.getElementById("btn-send-chat"),
+    btnNewChat: document.getElementById("btn-new-chat"),
+    sessionBadge: document.getElementById("session-badge"),
     chatMessages: document.getElementById("chat-messages"),
     traceFeed: document.getElementById("trace-feed"),
     btnClearTrace: document.getElementById("btn-clear-trace"),
@@ -190,6 +192,9 @@
 
     // Chat
     els.btnSendChat.addEventListener("click", sendChatMessage);
+    if (els.btnNewChat) {
+      els.btnNewChat.addEventListener("click", startNewSession);
+    }
     els.chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -441,10 +446,44 @@
     });
   }
 
+  function startNewSession() {
+    state.currentThreadId = null;
+    if (els.sessionBadge) {
+      els.sessionBadge.textContent = "Session: New";
+      els.sessionBadge.title = "Fresh session with independent memory";
+    }
+    const welcomeHtml = `
+      <div class="message-card message-system">
+        <div class="msg-avatar">🤖</div>
+        <div class="msg-body">
+          <div class="msg-author">NGA Manufacturing Assistant</div>
+          <div class="msg-prose">
+            New session initialized. Conversation memory and tool context have been reset. How can I assist you with assembly or quality today?
+          </div>
+          <div class="quick-prompts-container">
+            <span class="qp-label">Suggested queries:</span>
+            <div class="qp-list">
+              <button class="qp-chip" data-query="What is the wheel lug nut torque target at Station 144?">Wheel lug torque at Station 144</button>
+              <button class="qp-chip" data-query="What is the brake bleed sequence?">Brake bleed sequence</button>
+              <button class="qp-chip" data-query="How many vehicles were built on 2025-04-08 Shift C?">Shift C production count (SQL)</button>
+              <button class="qp-chip" data-query="A torque audit at Station 168 finds one lug nut at 111.0 Nm on NGA-AU25-0037. What is the process?">Torque audit anomaly & containment</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    els.chatMessages.innerHTML = welcomeHtml;
+    els.traceFeed.innerHTML = '<div class="trace-empty-state"><p>New session started. Send a query to see reasoning traces.</p></div>';
+  }
+
   function setActiveRole(roleId) {
     state.activeRole = roleId;
     localStorage.setItem("nga_active_role", roleId);
     state.currentThreadId = null; // reset thread for new role
+    if (els.sessionBadge) {
+      els.sessionBadge.textContent = "Session: New";
+      els.sessionBadge.title = "Current Session Thread ID";
+    }
     updateRoleUI();
     renderRolesCards();
   }
@@ -516,6 +555,10 @@
 
       const data = await res.json();
       state.currentThreadId = data.thread_id;
+      if (els.sessionBadge && data.thread_id) {
+        els.sessionBadge.textContent = `Session: ${data.thread_id.slice(0, 8)}`;
+        els.sessionBadge.title = `Active Session: ${data.thread_id}`;
+      }
 
       // Remove thinking skeleton
       removeThinkingMessage(thinkingMsgId);

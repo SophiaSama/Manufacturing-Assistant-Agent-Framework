@@ -26,3 +26,4 @@ class AgentState(TypedDict):
     fanout_plan: dict[str, Any] | None
     contradiction_resolution: dict[str, Any] | None
     input_guard: dict[str, Any] | None
+    thread_id: str | None

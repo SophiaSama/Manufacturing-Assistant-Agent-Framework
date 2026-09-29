@@ -255,17 +255,29 @@ def _summarize_tool_results(messages: list[Any], per_result_limit: int = 2000) -
     return "\n".join(summaries)
 
 
+def _get_current_turn_messages(messages: list[Any]) -> list[Any]:
+    """Return only messages from the most recent user turn onward."""
+    turn_messages: list[Any] = []
+    for m in reversed(messages):
+        turn_messages.append(m)
+        if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human":
+            break
+    return list(reversed(turn_messages))
+
+
 def _count_tool_rounds(messages: list[Any]) -> int:
-    return sum(1 for m in messages if getattr(m, "tool_calls", None))
+    turn_msgs = _get_current_turn_messages(messages)
+    return sum(1 for m in turn_msgs if getattr(m, "tool_calls", None))
 
 
 def _build_response_policy(state: AgentState, schema: str = "") -> str:
     question_parts = state.get("question_parts", [])
     user_role = state.get("user_role", "operator")
     role_prompt = SYSTEM_PROMPTS.get(user_role, SYSTEM_PROMPTS["operator"])
-    recent_error = _extract_recent_tool_error(state.get("messages", []))
-    tool_rounds = _count_tool_rounds(state.get("messages", []))
-    collected = _summarize_tool_results(state.get("messages", []))
+    current_msgs = _get_current_turn_messages(state.get("messages", []))
+    recent_error = _extract_recent_tool_error(current_msgs)
+    tool_rounds = _count_tool_rounds(current_msgs)
+    collected = _summarize_tool_results(current_msgs)
 
     schema_block = f"\nNGA database schema:\n{schema}\n" if schema else ""
     error_block = (
@@ -367,11 +379,12 @@ def _tool_call_signature(msg: Any) -> tuple | None:
 
 
 def _tool_loop_detected(messages: list[Any]) -> bool:
-    if _count_tool_rounds(messages) >= MAX_TOOL_CALL_ROUNDS:
+    current_msgs = _get_current_turn_messages(messages)
+    if _count_tool_rounds(current_msgs) >= MAX_TOOL_CALL_ROUNDS:
         return True
     repeated = 0
     last_sig = None
-    for msg in messages:
+    for msg in current_msgs:
         sig = _tool_call_signature(msg)
         if sig is None:
             continue
@@ -581,8 +594,8 @@ def _make_synthesis_node(settings: Settings):
                 if not final.recommendation:
                     final.recommendation = conflict_res.precedence_rule
 
-            first_human = next(
-                (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
+            current_human = next(
+                (m.content for m in reversed(messages) if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
                 "",
             )
             # Escape fallback/negative answers (no records/issues found) from hallucination quarantine
@@ -598,9 +611,9 @@ def _make_synthesis_node(settings: Settings):
                     source="negative_result_bypass",
                 )
             else:
-                evidence_summary = _summarize_tool_results(messages)
+                evidence_summary = _summarize_tool_results(_get_current_turn_messages(messages))
                 grounding_result = evaluate_fact_groundedness(
-                    query=first_human,
+                    query=current_human,
                     evidence=evidence_summary,
                     generated_answer=final.direct_answer,
                 )
@@ -703,7 +716,7 @@ def _make_hitl_node(app_state_db_path: str, approver=None):
             return {"pending_recommendation": recommendation}
 
         question = next(
-            (m.content for m in state["messages"] if getattr(m, "type", "") == "human"),
+            (m.content for m in reversed(state["messages"]) if getattr(m, "type", "") == "human"),
             "",
         )
 
@@ -717,10 +730,11 @@ def _make_hitl_node(app_state_db_path: str, approver=None):
             app_state_db_path,
             question=question,
             recommendation=recommendation,
-            category=_get_searched_categories(state.get("messages", [])),
+            category=_get_searched_categories(_get_current_turn_messages(state.get("messages", []))),
             user_role=user_role,
             class_a_alert=class_a_alert,
             escalation_level=escalation_level,
+            thread_id=state.get("thread_id"),
         )
 
         if approver is not None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
@@ -28,10 +29,16 @@ def init_decision_log(db_path: str) -> None:
                 status TEXT NOT NULL DEFAULT 'pending',
                 approver TEXT,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                thread_id TEXT
             )
             """
         )
+        # Migrate existing table if thread_id column is missing
+        cursor = con.execute("PRAGMA table_info(decisions_log)")
+        columns = {row[1] for row in cursor.fetchall()}
+        if "thread_id" not in columns:
+            con.execute("ALTER TABLE decisions_log ADD COLUMN thread_id TEXT")
         con.commit()
     finally:
         con.close()
@@ -45,6 +52,7 @@ def insert_recommendation(
     user_role: str = "operator",
     class_a_alert: bool = False,
     escalation_level: str | None = None,
+    thread_id: str | None = None,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat()
     con = _connect(db_path)
@@ -53,12 +61,12 @@ def insert_recommendation(
             """
             INSERT INTO decisions_log
                 (question, recommendation, category, user_role,
-                 class_a_alert, escalation_level, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                 class_a_alert, escalation_level, status, created_at, updated_at, thread_id)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
             """,
             (
                 question, recommendation, category, user_role,
-                int(class_a_alert), escalation_level, now, now,
+                int(class_a_alert), escalation_level, now, now, thread_id,
             ),
         )
         con.commit()
@@ -92,37 +100,34 @@ def update_decision(
 def get_decisions(
     db_path: str,
     status: str | None = None,
+    thread_id: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, object]]:
     """Retrieve decision records from decisions_log table."""
     con = _connect(db_path)
     con.row_factory = sqlite3.Row
     try:
+        clauses: list[str] = []
+        params: list[Any] = []
         if status:
-            cursor = con.execute(
-                """
-                SELECT id, question, recommendation, category, user_role,
-                       class_a_alert, escalation_level, status, approver,
-                       created_at, updated_at
-                FROM decisions_log
-                WHERE status = ?
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (status, limit),
-            )
-        else:
-            cursor = con.execute(
-                """
-                SELECT id, question, recommendation, category, user_role,
-                       class_a_alert, escalation_level, status, approver,
-                       created_at, updated_at
-                FROM decisions_log
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (limit,),
-            )
+            clauses.append("status = ?")
+            params.append(status)
+        if thread_id:
+            clauses.append("thread_id = ?")
+            params.append(thread_id)
+
+        where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        query = f"""
+            SELECT id, question, recommendation, category, user_role,
+                   class_a_alert, escalation_level, status, approver,
+                   created_at, updated_at, thread_id
+            FROM decisions_log
+            {where_clause}
+            ORDER BY id DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        cursor = con.execute(query, tuple(params))
         return [dict(row) for row in cursor.fetchall()]
     finally:
         con.close()
@@ -137,7 +142,7 @@ def get_decision_by_id(db_path: str, decision_id: int) -> dict[str, object] | No
             """
             SELECT id, question, recommendation, category, user_role,
                    class_a_alert, escalation_level, status, approver,
-                   created_at, updated_at
+                   created_at, updated_at, thread_id
             FROM decisions_log
             WHERE id = ?
             """,
