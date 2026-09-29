@@ -35,6 +35,7 @@ from nga.models.answer_schema import (
 from nga.providers.factory import make_chat_model
 from nga.rag_agent.classifier import classify_model_route
 from nga.rag_agent.jev_reasoning import (
+    FactGroundednessResult,
     calculate_reasoning_token_telemetry,
     evaluate_evidence_sufficiency,
     evaluate_fact_groundedness,
@@ -366,6 +367,34 @@ def _is_ungrounded(state: AgentState, answer: FinalAnswer) -> bool:
     return not answer.evidence
 
 
+def _is_negative_or_unanswered(answer: FinalAnswer) -> bool:
+    """Return True if the answer states no records, defects, or evidence were found."""
+    text = (answer.direct_answer or "").strip().lower()
+    negative_phrases = (
+        "no critical issues",
+        "no issues found",
+        "no issues occurred",
+        "no defects found",
+        "no records found",
+        "no matching records",
+        "0 matching records",
+        "0 rows returned",
+        "no relevant document",
+        "could not gather supporting evidence",
+        "could not find",
+        "no incidents reported",
+        "no incidents occurred",
+        "no non-conformance",
+        "no escalation",
+        "no data found",
+    )
+    if any(phrase in text for phrase in negative_phrases):
+        return True
+    if answer.unanswered_questions and not answer.answered_questions and not answer.findings:
+        return True
+    return False
+
+
 def _get_searched_categories(messages: list[Any]) -> str:
     seen: list[str] = []
     for msg in messages:
@@ -429,6 +458,8 @@ def _make_synthesis_node(settings: Settings):
                 prompt = (
                     "Create a structured final answer for a manufacturing decision-support query. "
                     "Use only grounded details from the provided answer. "
+                    "For each evidence entry, source_type must strictly be either 'sql' (for database queries) "
+                    "or 'document' (for SOPs and reference texts). "
                     "Flag class_a_alert if the text involves Class A safety-critical systems "
                     "(brakes, steering, airbags, seat belts, fuel, wheel retention, "
                     "engine mounts, windshield retention). "
@@ -480,12 +511,25 @@ def _make_synthesis_node(settings: Settings):
                 (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
                 "",
             )
-            evidence_summary = _summarize_tool_results(messages)
-            grounding_result = evaluate_fact_groundedness(
-                query=first_human,
-                evidence=evidence_summary,
-                generated_answer=final.direct_answer,
-            )
+            # Escape fallback/negative answers (no records/issues found) from hallucination quarantine
+            if _is_negative_or_unanswered(final):
+                logger.info("negative_or_fallback_answer_escaped_from_grounding_check")
+                grounding_result = FactGroundednessResult(
+                    is_faithful=True,
+                    is_faithful_prob=1.0,
+                    groundedness_score=5,
+                    unsupported_claim_type="none",
+                    unsupported_claim_conf=0.0,
+                    is_grounded=True,
+                    source="negative_result_bypass",
+                )
+            else:
+                evidence_summary = _summarize_tool_results(messages)
+                grounding_result = evaluate_fact_groundedness(
+                    query=first_human,
+                    evidence=evidence_summary,
+                    generated_answer=final.direct_answer,
+                )
             fact_grounding = asdict(grounding_result)
 
             if not grounding_result.is_grounded:

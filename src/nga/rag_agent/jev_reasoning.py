@@ -278,7 +278,7 @@ def evaluate_fact_groundedness(
 
         state = {
             "query": query[:1000],
-            "source_evidence": evidence[:4000],
+            "source_evidence": evidence[:12000],
             "generated_answer": generated_answer[:3000],
         }
 
