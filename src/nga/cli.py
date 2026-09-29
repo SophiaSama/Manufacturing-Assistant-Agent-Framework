@@ -89,7 +89,7 @@ def run_turn(graph, question: str, *, thread_id: str, role: str, print_fn=print)
                 if isinstance(p, str) and p.strip()
             ]
 
-        synthesis_update = update.get("synthesis") if isinstance(update, dict) else None
+        synthesis_update = (update.get("synthesis") or update.get("guard_rejection")) if isinstance(update, dict) else None
         if answer is None and synthesis_update:
             answer = _render_synthesis_answer(synthesis_update, question_parts)
 

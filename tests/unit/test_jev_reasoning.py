@@ -324,8 +324,9 @@ def test_groundedness_with_mocked_jev_hallucination():
     assert res.source == "typesafe_jev"
 
 
-def test_synthesis_node_with_jev_grounding_quarantine():
+def test_synthesis_node_with_jev_grounding_quarantine(monkeypatch):
     """Synthesis node quarantines response if Jev detects ungrounded claims."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from nga.config import Settings
     from nga.graph.orchestrator import _make_synthesis_node
     from nga.rag_agent.jev_reasoning import FactGroundednessResult
@@ -489,8 +490,9 @@ def test_detect_cross_source_contradiction_no_conflict():
     assert res.resolution_guidance == ""
 
 
-def test_prepare_node_with_speculative_fanout():
+def test_prepare_node_with_speculative_fanout(monkeypatch):
     """Prepare node initializes fanout_plan in state."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from nga.config import Settings
     from nga.graph.orchestrator import _make_prepare_node
 
@@ -522,8 +524,9 @@ def test_prepare_node_with_speculative_fanout():
     assert "recommended_sources" in result["fanout_plan"]
 
 
-def test_synthesis_node_follows_routed_model_and_fallback():
+def test_synthesis_node_follows_routed_model_and_fallback(monkeypatch):
     """Synthesis node dynamically resolves model from state['model_route'] or falls back to openrouter_model."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from nga.config import Settings
     from nga.graph.orchestrator import _make_synthesis_node
 
@@ -661,8 +664,9 @@ def test_summarize_tool_results_formats_sql():
     assert "tables: defects" in summary
 
 
-def test_synthesis_bypasses_grounding_for_negative_answer():
+def test_synthesis_bypasses_grounding_for_negative_answer(monkeypatch):
     """Negative/fallback answers escape hallucination quarantine in synthesis node."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from langchain_core.messages import HumanMessage, ToolMessage
     from nga.config import Settings
     from nga.graph.orchestrator import _make_synthesis_node

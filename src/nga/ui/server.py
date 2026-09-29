@@ -484,7 +484,7 @@ def create_app() -> FastAPI:
                             "details": {"tools_executed": [getattr(m, "name", "tool") for m in msgs]},
                         })
 
-                    elif node_name == "synthesis":
+                    elif node_name in ("synthesis", "guard_rejection"):
                         fa_payload = node_data.get("final_answer")
                         if isinstance(fa_payload, dict):
                             try:
@@ -507,15 +507,21 @@ def create_app() -> FastAPI:
                             fa_payload.get("token_telemetry") if isinstance(fa_payload, dict) else None
                         )
 
+                        step_summary = (
+                            "Input safety filter blocked query"
+                            if node_name == "guard_rejection"
+                            else "Synthesized structured final answer with safety checks"
+                        )
                         trace_steps.append({
-                            "node": "synthesis",
+                            "node": node_name,
                             "timestamp": ts,
-                            "summary": "Synthesized structured final answer with safety checks",
+                            "summary": step_summary,
                             "details": {
                                 "class_a_alert": final_answer_obj.class_a_alert if final_answer_obj else False,
                                 "escalation_level": final_answer_obj.escalation_level if final_answer_obj else None,
                                 "recall_criteria": final_answer_obj.recall_criteria_met if final_answer_obj else [],
                                 "token_usage": captured_token_usage,
+                                "input_guard": fa_payload.get("input_guard") if isinstance(fa_payload, dict) else None,
                             },
                         })
 

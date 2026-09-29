@@ -36,7 +36,9 @@ from nga.providers.factory import make_chat_model
 from nga.rag_agent.classifier import classify_model_route
 from nga.rag_agent.jev_reasoning import (
     FactGroundednessResult,
+    InputGuardResult,
     calculate_reasoning_token_telemetry,
+    check_input_safety,
     evaluate_evidence_sufficiency,
     evaluate_fact_groundedness,
     plan_speculative_fanout,
@@ -89,6 +91,16 @@ def _make_prepare_node(settings: Settings):
     def _prepare_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
         question = last.content if hasattr(last, "content") else str(last)
+
+        guard = check_input_safety(question)
+        logger.info(
+            "input_guard_evaluated is_allowed=%s category=%s prob=%.2f reason=%s",
+            guard.is_allowed,
+            guard.intent_category,
+            guard.is_malicious_prob,
+            guard.rejection_reason,
+        )
+
         route_info = classify_model_route(question, settings)
         logger.info(
             "model_route_selected choice=%s model=%s source=%s confidence=%s",
@@ -110,9 +122,71 @@ def _make_prepare_node(settings: Settings):
             "question_parts": extract_question_parts(question),
             "model_route": route_info,
             "fanout_plan": asdict(fanout),
+            "input_guard": asdict(guard),
         }
 
     return _prepare_node
+
+
+# ── Node: guard_rejection ───────────────────────────────────────────────────
+
+@traceable_if_enabled(run_type="chain", name="orchestrator.route_after_prepare")
+def _route_after_prepare(state: AgentState) -> str:
+    guard = state.get("input_guard") or {}
+    if guard.get("is_allowed") is False:
+        return "guard_rejection"
+    return "agent"
+
+
+def _make_guard_rejection_node():
+    @traceable_if_enabled(run_type="chain", name="orchestrator.guard_rejection")
+    def _guard_rejection_node(state: AgentState) -> dict[str, Any]:
+        guard = state.get("input_guard") or {}
+        reason = guard.get("rejection_reason")
+        parts = state.get("question_parts", [])
+
+        if reason == "adversarial_blocked":
+            direct_ans = (
+                "⚠️ [Security Alert]: Request blocked by safety policy. "
+                "The query was flagged as adversarial, manipulative, or attempting to bypass security boundaries."
+            )
+        else:
+            direct_ans = (
+                "ℹ️ [Out of Scope]: I am the Northgate Assembly Plant Assistant, "
+                "specialized in vehicle assembly, technician maintenance, quality engineering, and plant operations. "
+                "Please ask questions related to manufacturing specifications, SOPs, or production records."
+            )
+
+        final = FinalAnswer(
+            direct_answer=direct_ans,
+            findings=[],
+            evidence=[],
+            answered_questions=[],
+            unanswered_questions=list(parts),
+            recommendation=None,
+            class_a_alert=False,
+            escalation_level=None,
+            recall_criteria_met=[],
+        )
+        rendered = render_final_answer(final)
+        final_dump = final.model_dump()
+        final_dump["input_guard"] = guard
+
+        attach_trace_metadata(
+            input_blocked=True,
+            input_intent_category=guard.get("intent_category"),
+            input_malicious_prob=guard.get("is_malicious_prob"),
+        )
+
+        return {
+            "messages": [AIMessage(content=rendered)],
+            "pending_recommendation": None,
+            "answered_parts": [],
+            "unanswered_parts": list(parts),
+            "final_answer": final_dump,
+        }
+
+    return _guard_rejection_node
 
 
 # ── Response policy prompt ─────────────────────────────────────────────────────
@@ -691,6 +765,7 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
 
     graph = StateGraph(AgentState)
     graph.add_node("prepare", _make_prepare_node(settings))
+    graph.add_node("guard_rejection", _make_guard_rejection_node())
     graph.add_node(
         "agent",
         _make_agent_node(settings, wrapped_sql, wrapped_retrieval, schema),
@@ -700,7 +775,12 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
     graph.add_node("hitl", _make_hitl_node(settings.app_state_db_path, approver=approver))
 
     graph.set_entry_point("prepare")
-    graph.add_edge("prepare", "agent")
+    graph.add_conditional_edges(
+        "prepare",
+        _route_after_prepare,
+        {"agent": "agent", "guard_rejection": "guard_rejection"},
+    )
+    graph.add_edge("guard_rejection", "hitl")
     graph.add_conditional_edges(
         "agent",
         _route_after_agent,
