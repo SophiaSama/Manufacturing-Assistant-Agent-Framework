@@ -7,7 +7,6 @@ from langchain_core.messages import HumanMessage
 from nga.graph.orchestrator import _make_guard_rejection_node, _route_after_prepare
 from nga.graph.state import AgentState
 from nga.rag_agent.jev_reasoning import (
-    InputGuardResult,
     check_input_safety,
 )
 

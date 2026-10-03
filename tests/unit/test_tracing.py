@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from nga.tracing import (
     attach_token_telemetry,
     attach_trace_metadata,

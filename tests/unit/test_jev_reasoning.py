@@ -650,7 +650,9 @@ def test_is_negative_or_unanswered():
 def test_summarize_tool_results_formats_sql():
     """_summarize_tool_results formats SQL output into human-readable [SQL QUERY RESULT]."""
     import json
+
     from langchain_core.messages import ToolMessage
+
     from nga.graph.orchestrator import _summarize_tool_results
 
     sql_payload = {
@@ -678,6 +680,7 @@ def test_synthesis_bypasses_grounding_for_negative_answer(monkeypatch):
     """Negative/fallback answers escape hallucination quarantine in synthesis node."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from langchain_core.messages import HumanMessage, ToolMessage
+
     from nga.config import Settings
     from nga.graph.orchestrator import _make_synthesis_node
     from nga.graph.state import AgentState

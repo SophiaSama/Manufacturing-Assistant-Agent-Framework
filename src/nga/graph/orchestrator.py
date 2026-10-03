@@ -36,7 +36,6 @@ from nga.providers.factory import make_chat_model
 from nga.rag_agent.classifier import classify_model_route
 from nga.rag_agent.jev_reasoning import (
     FactGroundednessResult,
-    InputGuardResult,
     calculate_reasoning_token_telemetry,
     check_input_safety,
     evaluate_evidence_sufficiency,

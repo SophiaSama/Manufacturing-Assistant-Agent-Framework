@@ -26,7 +26,6 @@ from nga.memory.decision_log import (
     insert_recommendation,
 )
 
-
 # ── 1. SQL Column Alias Validation Unit Tests ─────────────────────────────────
 
 def test_sql_alias_in_order_by_accepted():
