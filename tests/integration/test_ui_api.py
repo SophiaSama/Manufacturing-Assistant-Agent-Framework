@@ -21,6 +21,21 @@ from nga.memory.decision_log import (
 from nga.ui.server import app
 
 
+@pytest.fixture(autouse=True)
+def _dummy_openrouter_key(monkeypatch):
+    """Provide a dummy OpenRouter key when none is configured.
+
+    These endpoint tests never call the LLM, but ``ctx.setup()`` runs
+    ``Settings.from_env()``, which rejects a missing/placeholder key in
+    Cloud mode (e.g., CI runs without secrets).
+    """
+    import os
+
+    key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if not key or key.lower().startswith("your-"):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-dummy-openrouter-key")
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
