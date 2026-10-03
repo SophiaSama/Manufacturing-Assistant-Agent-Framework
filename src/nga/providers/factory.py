@@ -6,8 +6,10 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 
 from nga.config import Settings
+from nga.tracing import traceable_if_enabled
 
 
+@traceable_if_enabled(run_type="chain", name="providers.make_embeddings")
 def make_embeddings(settings: Settings) -> Embeddings:
     if settings.provider == "ollama":
         from langchain_ollama import OllamaEmbeddings
@@ -38,6 +40,7 @@ def make_embeddings(settings: Settings) -> Embeddings:
     )
 
 
+@traceable_if_enabled(run_type="chain", name="providers.make_chat_model")
 def make_chat_model(settings: Settings, model_override: str | None = None) -> BaseChatModel:
     """Create a chat model, optionally overriding the model slug (for tier routing)."""
     if settings.provider == "ollama":

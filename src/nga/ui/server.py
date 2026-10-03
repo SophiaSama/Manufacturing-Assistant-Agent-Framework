@@ -62,6 +62,7 @@ from nga.models.answer_schema import (
 from nga.providers.factory import make_embeddings
 from nga.rag_agent.rbac import ACCESS_LEVELS
 from nga.tools.tool_factory import make_retrieval_tool, make_sql_tool
+from nga.tracing import configure_tracing
 
 logger = logging.getLogger("nga.ui.server")
 
@@ -165,6 +166,7 @@ class AppContext:
             return
 
         self.settings = Settings.from_env()
+        configure_tracing(self.settings)
         init_decision_log(self.settings.app_state_db_path)
 
         self.cache = make_cache_from_settings(self.settings, env="prod")
@@ -410,6 +412,7 @@ def create_app() -> FastAPI:
             "messages": [HumanMessage(content=request.message)],
             "user_role": role,
             "user_level": ACCESS_LEVELS.get(role, 1),
+            "thread_id": thread_id,
         }
 
         trace_steps: list[dict[str, Any]] = []
@@ -482,7 +485,7 @@ def create_app() -> FastAPI:
                             "details": {"tools_executed": [getattr(m, "name", "tool") for m in msgs]},
                         })
 
-                    elif node_name == "synthesis":
+                    elif node_name in ("synthesis", "guard_rejection"):
                         fa_payload = node_data.get("final_answer")
                         if isinstance(fa_payload, dict):
                             try:
@@ -505,15 +508,21 @@ def create_app() -> FastAPI:
                             fa_payload.get("token_telemetry") if isinstance(fa_payload, dict) else None
                         )
 
+                        step_summary = (
+                            "Input safety filter blocked query"
+                            if node_name == "guard_rejection"
+                            else "Synthesized structured final answer with safety checks"
+                        )
                         trace_steps.append({
-                            "node": "synthesis",
+                            "node": node_name,
                             "timestamp": ts,
-                            "summary": "Synthesized structured final answer with safety checks",
+                            "summary": step_summary,
                             "details": {
                                 "class_a_alert": final_answer_obj.class_a_alert if final_answer_obj else False,
                                 "escalation_level": final_answer_obj.escalation_level if final_answer_obj else None,
                                 "recall_criteria": final_answer_obj.recall_criteria_met if final_answer_obj else [],
                                 "token_usage": captured_token_usage,
+                                "input_guard": fa_payload.get("input_guard") if isinstance(fa_payload, dict) else None,
                             },
                         })
 
@@ -538,9 +547,11 @@ def create_app() -> FastAPI:
             )
             rendered_answer = render_final_answer(final_answer_obj)
 
-        # Check if a new decision was logged
+        # Check if a new decision was logged for this session
         if pending_rec and ctx.settings:
-            recent_decisions = get_decisions(ctx.settings.app_state_db_path, limit=1)
+            recent_decisions = get_decisions(ctx.settings.app_state_db_path, thread_id=thread_id, limit=1)
+            if not recent_decisions:
+                recent_decisions = get_decisions(ctx.settings.app_state_db_path, limit=1)
             if recent_decisions:
                 decision_record = recent_decisions[0]
 
@@ -557,6 +568,118 @@ def create_app() -> FastAPI:
             "pending_decision": decision_record,
             "token_usage": captured_token_usage,
         }
+
+    # ── Session & Conversation Thread Endpoints ───────────────────────────────
+
+    @app.post("/api/sessions/new")
+    def create_session() -> dict[str, Any]:
+        """Create a new independent session thread."""
+        new_thread_id = str(uuid.uuid4())
+        logger.info("New independent session created: %s", new_thread_id[:8])
+        return {
+            "thread_id": new_thread_id,
+            "short_id": new_thread_id[:8],
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @app.get("/api/sessions")
+    def list_sessions(
+        limit: int = Query(30, description="Max session threads to return"),
+    ) -> dict[str, Any]:
+        """List distinct conversation sessions from checkpoints."""
+        ctx.setup()
+        if not ctx.settings:
+            return {"sessions": [], "count": 0}
+        db_path = ctx.settings.app_state_db_path
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row
+        try:
+            tbl_check = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='checkpoints'")
+            if not tbl_check.fetchone():
+                return {"sessions": [], "count": 0}
+
+            cursor = con.execute(
+                """
+                SELECT thread_id, COUNT(*) AS checkpoint_count, MAX(checkpoint_id) AS latest_checkpoint
+                FROM checkpoints
+                GROUP BY thread_id
+                ORDER BY latest_checkpoint DESC
+                LIMIT ?
+                """,
+                (limit,),
+            )
+            rows = cursor.fetchall()
+            sessions = []
+            for r in rows:
+                tid = r["thread_id"]
+                sessions.append({
+                    "thread_id": tid,
+                    "short_id": tid[:8],
+                    "checkpoint_count": r["checkpoint_count"],
+                })
+            return {"sessions": sessions, "count": len(sessions)}
+        finally:
+            con.close()
+
+    @app.get("/api/sessions/{thread_id}/history")
+    def get_session_history(thread_id: str) -> dict[str, Any]:
+        """Retrieve stored message history for a specific session thread."""
+        ctx.setup()
+        if not ctx.settings or not ctx.checkpointer:
+            raise HTTPException(status_code=500, detail="Server not configured")
+        try:
+            config = {"configurable": {"thread_id": thread_id}}
+            cp_tuple = ctx.checkpointer.get_tuple(config)
+            if not cp_tuple or not cp_tuple.checkpoint:
+                return {"thread_id": thread_id, "messages": [], "count": 0}
+            channel_values = cp_tuple.checkpoint.get("channel_values", {})
+            raw_msgs = channel_values.get("messages", [])
+            serialized = []
+            for m in raw_msgs:
+                m_type = getattr(m, "type", "unknown")
+                content = getattr(m, "content", "")
+                if isinstance(content, list):
+                    content_text = " ".join(
+                        item.get("text", "") if isinstance(item, dict) else str(item)
+                        for item in content
+                    )
+                else:
+                    content_text = str(content)
+                serialized.append({
+                    "type": m_type,
+                    "content": content_text,
+                })
+            return {
+                "thread_id": thread_id,
+                "short_id": thread_id[:8],
+                "messages": serialized,
+                "count": len(serialized),
+            }
+        except Exception as exc:
+            logger.warning("Error reading session history for %s: %s", thread_id[:8], exc)
+            return {"thread_id": thread_id, "messages": [], "count": 0, "error": str(exc)}
+
+    @app.delete("/api/sessions/{thread_id}")
+    def delete_session(thread_id: str) -> dict[str, Any]:
+        """Delete checkpoints, writes, and decision records for a session thread."""
+        ctx.setup()
+        if not ctx.settings:
+            raise HTTPException(status_code=500, detail="Server not configured")
+        con = sqlite3.connect(ctx.settings.app_state_db_path)
+        try:
+            # Check table existence before deleting
+            tables = {row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            if "checkpoints" in tables:
+                con.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+            if "writes" in tables:
+                con.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+            if "decisions_log" in tables:
+                con.execute("DELETE FROM decisions_log WHERE thread_id = ?", (thread_id,))
+            con.commit()
+            logger.info("Purged session thread data for: %s", thread_id[:8])
+            return {"success": True, "thread_id": thread_id}
+        finally:
+            con.close()
 
     # ── HIL Decision Endpoints ────────────────────────────────────────────────
 

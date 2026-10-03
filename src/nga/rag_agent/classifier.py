@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from nga.config import Settings
+from nga.tracing import traceable_if_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ _NGA_COMPLEX_ENTITIES = re.compile(
 )
 
 
+@traceable_if_enabled(run_type="chain", name="classifier.score_complexity")
 def score_complexity(query: str) -> int:
     """Score query complexity 0–10 using local heuristics.
 
@@ -175,6 +177,7 @@ def _heuristic_fallback_route(query: str, settings: Settings) -> dict[str, Any]:
     }
 
 
+@traceable_if_enabled(run_type="chain", name="classifier.classify_model_route")
 def classify_model_route(
     query: str,
     settings: Settings,

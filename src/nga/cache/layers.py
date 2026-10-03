@@ -23,6 +23,7 @@ from nga.cache.keys import (
     canonical_text,
     make_key,
 )
+from nga.tracing import traceable_if_enabled
 
 logger = logging.getLogger("nga.cache.layers")
 
@@ -223,6 +224,7 @@ def _retr_key(cache: NgaCache, *, query: str, categories: list[str],
     return _key(cache, L_RETR, user_level, payload)
 
 
+@traceable_if_enabled(run_type="chain", name="cache.cached_retrieve")
 def cached_retrieve(
     fn: Callable[..., Any],
     *,
@@ -252,6 +254,7 @@ def cached_retrieve(
     return results
 
 
+@traceable_if_enabled(run_type="chain", name="cache.cached_graph_evidence")
 def cached_graph_evidence(
     fn: Callable[..., Any],
     *,
@@ -292,6 +295,7 @@ def _sql_key(cache: NgaCache, *, sql: str, db_path: str, etag: int) -> str:
     )
 
 
+@traceable_if_enabled(run_type="chain", name="cache.cached_run_query")
 def cached_run_query(
     fn: Callable[..., Any],
     *,

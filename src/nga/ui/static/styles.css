@@ -1359,3 +1359,54 @@ body {
   color: #38bdf8;
   font-weight: 600;
 }
+
+/* Inline HIL Safety Gate inside Chat Message Cards */
+.inline-hil-form {
+  margin-top: 0.65rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+}
+
+.inline-hil-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.inline-hil-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-warning);
+}
+
+.inline-hil-id {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.inline-hil-fields .form-control-sm {
+  font-size: 0.825rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  border-radius: var(--radius-sm);
+  width: 100%;
+}
+
+.inline-hil-fields .form-control-sm:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+.inline-hil-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+

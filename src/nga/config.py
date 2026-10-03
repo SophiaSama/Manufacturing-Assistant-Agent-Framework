@@ -63,6 +63,7 @@ class Settings:
     variant_vector_store_dir: str
     conflict_vector_store_dir: str
     langsmith_tracing_enabled: bool
+    langsmith_project: str
     # RBAC JWT
     jwt_secret: str
     jwt_dev_mode: bool
@@ -162,6 +163,10 @@ class Settings:
                 "CONFLICT_VECTOR_STORE_DIR", "data/conflict_vector_store"
             ),
             langsmith_tracing_enabled=tracing_enabled,
+            langsmith_project=os.getenv(
+                "LANGSMITH_PROJECT",
+                os.getenv("LANGCHAIN_PROJECT", "nga-manufacturing-assistant"),
+            ),
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret"),
             jwt_dev_mode=os.getenv("JWT_DEV_MODE", "true").lower() == "true",
             rag_tier1_model=os.getenv(
