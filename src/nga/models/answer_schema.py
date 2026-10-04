@@ -5,26 +5,7 @@ from __future__ import annotations
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
-
-
-class EvidenceReference(BaseModel):
-    source_type: Literal["sql", "document"]
-    citation: str          # doc_id / SOP number / SQL table or NC-id
-    supports: list[str] = Field(default_factory=list)
-
-
-class FinalAnswer(BaseModel):
-    direct_answer: str
-    findings: list[str] = Field(default_factory=list)
-    evidence: list[EvidenceReference] = Field(default_factory=list)
-    answered_questions: list[str] = Field(default_factory=list)
-    unanswered_questions: list[str] = Field(default_factory=list)
-    recommendation: str | None = None
-    # NGA-specific: safety flags
-    class_a_alert: bool = False
-    escalation_level: str | None = None   # "L1","L2","L3","L4"
-    recall_criteria_met: list[str] = Field(default_factory=list)  # ["C1","C3"]
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
 def _normalize_source_type(value: object) -> str:
@@ -38,6 +19,30 @@ def _normalize_source_type(value: object) -> str:
         "search_sop_documents": "document", "reference": "document",
     }
     return alias_map.get(normalized, "document")
+
+
+class EvidenceReference(BaseModel):
+    source_type: Literal["sql", "document"]
+    citation: str          # doc_id / SOP number / SQL table or NC-id
+    supports: list[str] = Field(default_factory=list)
+
+    @field_validator("source_type", mode="before")
+    @classmethod
+    def normalize_source_type(cls, v: object) -> str:
+        return _normalize_source_type(v)
+
+
+class FinalAnswer(BaseModel):
+    direct_answer: str
+    findings: list[str] = Field(default_factory=list)
+    evidence: list[EvidenceReference] = Field(default_factory=list)
+    answered_questions: list[str] = Field(default_factory=list)
+    unanswered_questions: list[str] = Field(default_factory=list)
+    recommendation: str | None = None
+    # NGA-specific: safety flags
+    class_a_alert: bool = False
+    escalation_level: str | None = None   # "L1","L2","L3","L4"
+    recall_criteria_met: list[str] = Field(default_factory=list)  # ["C1","C3"]
 
 
 def _normalize_evidence_list(value: object) -> list[dict[str, object]]:

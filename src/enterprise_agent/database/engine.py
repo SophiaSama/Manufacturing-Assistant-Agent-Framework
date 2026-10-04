@@ -70,6 +70,11 @@ def validate_schema_references(
         if table.alias:
             alias_map[table.alias] = table_name
 
+    # Column aliases defined in SELECT expressions (e.g. COUNT(*) AS cnt ... ORDER BY cnt)
+    defined_aliases = {
+        (a.alias or a.output_name) for a in statement.find_all(exp.Alias) if (a.alias or a.output_name)
+    }
+
     for column in statement.find_all(exp.Column):
         column_name = column.name
         table_name = column.table
@@ -83,6 +88,9 @@ def validate_schema_references(
                     f"Unknown column `{column_name}` on table `{resolved_table}`. "
                     f"Available columns: {available}"
                 )
+            continue
+
+        if column_name in defined_aliases:
             continue
 
         candidate_tables = [

@@ -19,6 +19,7 @@ from enterprise_agent.database.engine import (
 from enterprise_agent.database.engine import (
     validate_schema_references as _validate_schema_references_generic,
 )
+from nga.tracing import traceable_if_enabled
 
 __all__ = [
     "SqlValidationError",
@@ -43,11 +44,13 @@ def _validate_schema_references(db_path: str, statement: exp.Expression) -> None
     _validate_schema_references_generic(statement, schema)
 
 
+@traceable_if_enabled(run_type="tool", name="sql.describe_schema")
 def describe_schema(db_path: str) -> str:
     """Return a compact human-readable description of all NGA tables and columns."""
     return SqliteAdapter(db_path).describe_schema()
 
 
+@traceable_if_enabled(run_type="tool", name="sql.run_query")
 def run_query(db_path: str, sql: str) -> dict[str, Any]:
     """Validate and execute a read-only SELECT against nga.db.
 

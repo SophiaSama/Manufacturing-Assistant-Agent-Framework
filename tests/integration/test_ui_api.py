@@ -21,6 +21,21 @@ from nga.memory.decision_log import (
 from nga.ui.server import app
 
 
+@pytest.fixture(autouse=True)
+def _dummy_openrouter_key(monkeypatch):
+    """Provide a dummy OpenRouter key when none is configured.
+
+    These endpoint tests never call the LLM, but ``ctx.setup()`` runs
+    ``Settings.from_env()``, which rejects a missing/placeholder key in
+    Cloud mode (e.g., CI runs without secrets).
+    """
+    import os
+
+    key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if not key or key.lower().startswith("your-"):
+        monkeypatch.setenv("OPENROUTER_API_KEY", "test-dummy-openrouter-key")
+
+
 @pytest.fixture
 def client():
     return TestClient(app)
@@ -347,5 +362,70 @@ def test_logs_api(client):
     data = res.json()
     assert "logs" in data
     assert "total_captured" in data
+
+
+def test_session_management_api(client):
+    # 1. Create a new session
+    res = client.post("/api/sessions/new")
+    assert res.status_code == 200
+    data = res.json()
+    assert "thread_id" in data
+    assert "short_id" in data
+    tid = data["thread_id"]
+
+    # 2. History of fresh session is empty
+    res_hist = client.get(f"/api/sessions/{tid}/history")
+    assert res_hist.status_code == 200
+    assert res_hist.json()["count"] == 0
+
+    # 3. List sessions endpoint
+    res_list = client.get("/api/sessions")
+    assert res_list.status_code == 200
+    assert "sessions" in res_list.json()
+
+    # 4. Delete session endpoint
+    res_del = client.delete(f"/api/sessions/{tid}")
+    assert res_del.status_code == 200
+    assert res_del.json()["success"] is True
+
+
+def test_decision_log_thread_isolation():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = str(Path(tmpdir) / "app_state.db")
+        init_decision_log(db_path)
+
+        # Thread 1 recommendation
+        d1 = insert_recommendation(
+            db_path,
+            question="Turn 1 question",
+            recommendation="Action 1",
+            category="GENERAL",
+            thread_id="thread-alpha",
+        )
+
+        # Thread 2 recommendation
+        d2 = insert_recommendation(
+            db_path,
+            question="Turn 2 question",
+            recommendation="Action 2",
+            category="GENERAL",
+            thread_id="thread-beta",
+        )
+
+        # Filter by thread-alpha
+        alpha_recs = get_decisions(db_path, thread_id="thread-alpha")
+        assert len(alpha_recs) == 1
+        assert alpha_recs[0]["id"] == d1
+        assert alpha_recs[0]["thread_id"] == "thread-alpha"
+
+        # Filter by thread-beta
+        beta_recs = get_decisions(db_path, thread_id="thread-beta")
+        assert len(beta_recs) == 1
+        assert beta_recs[0]["id"] == d2
+        assert beta_recs[0]["thread_id"] == "thread-beta"
+
+        # All decisions
+        all_recs = get_decisions(db_path)
+        assert len(all_recs) == 2
 
 

@@ -324,8 +324,9 @@ def test_groundedness_with_mocked_jev_hallucination():
     assert res.source == "typesafe_jev"
 
 
-def test_synthesis_node_with_jev_grounding_quarantine():
+def test_synthesis_node_with_jev_grounding_quarantine(monkeypatch):
     """Synthesis node quarantines response if Jev detects ungrounded claims."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from nga.config import Settings
     from nga.graph.orchestrator import _make_synthesis_node
     from nga.rag_agent.jev_reasoning import FactGroundednessResult
@@ -358,7 +359,17 @@ def test_synthesis_node_with_jev_grounding_quarantine():
         "fact_groundedness": None,
     }
 
-    with patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_ground:
+    mock_llm = MagicMock()
+    mock_structured = MagicMock()
+    mock_structured.invoke.return_value = {
+        "direct_answer": "The torque is 500 Nm.",
+        "findings": ["Fake spec"],
+        "evidence": [{"source_type": "document", "citation": "SOP-101"}],
+    }
+    mock_llm.with_structured_output.return_value = mock_structured
+
+    with patch("nga.graph.orchestrator.make_chat_model", return_value=mock_llm), \
+         patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_ground:
         mock_ground.return_value = FactGroundednessResult(
             is_faithful=False,
             is_faithful_prob=0.10,
@@ -489,8 +500,9 @@ def test_detect_cross_source_contradiction_no_conflict():
     assert res.resolution_guidance == ""
 
 
-def test_prepare_node_with_speculative_fanout():
+def test_prepare_node_with_speculative_fanout(monkeypatch):
     """Prepare node initializes fanout_plan in state."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from nga.config import Settings
     from nga.graph.orchestrator import _make_prepare_node
 
@@ -522,8 +534,9 @@ def test_prepare_node_with_speculative_fanout():
     assert "recommended_sources" in result["fanout_plan"]
 
 
-def test_synthesis_node_follows_routed_model_and_fallback():
+def test_synthesis_node_follows_routed_model_and_fallback(monkeypatch):
     """Synthesis node dynamically resolves model from state['model_route'] or falls back to openrouter_model."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
     from nga.config import Settings
     from nga.graph.orchestrator import _make_synthesis_node
 
@@ -574,4 +587,159 @@ def test_synthesis_node_follows_routed_model_and_fallback():
         state_routed["model_route"] = {"model_name": "custom/routed-model-v1"}
         synthesis_fn(state_routed)
         assert created_overrides[-1] == "custom/routed-model-v1"
+
+
+def test_evidence_reference_source_type_normalization():
+    """EvidenceReference normalizes aliases like 'database', 'sop', 'nga_database' to 'sql' or 'document'."""
+    from nga.models.answer_schema import EvidenceReference, FinalAnswer
+
+    # Direct model construction
+    ref_db = EvidenceReference(source_type="database", citation="defects")
+    assert ref_db.source_type == "sql"
+
+    ref_sop = EvidenceReference(source_type="sop", citation="SOP-101")
+    assert ref_sop.source_type == "document"
+
+    ref_nga = EvidenceReference(source_type="query_nga_database", citation="nc_records")
+    assert ref_nga.source_type == "sql"
+
+    # In FinalAnswer
+    fa = FinalAnswer(
+        direct_answer="Found 2 issues",
+        evidence=[
+            {"source_type": "database", "citation": "defects"},
+            {"source_type": "sop", "citation": "QCR-501"},
+        ],
+    )
+    assert fa.evidence[0].source_type == "sql"
+    assert fa.evidence[1].source_type == "document"
+
+
+def test_is_negative_or_unanswered():
+    """Test detection of negative or unanswered fallback answers."""
+    from nga.graph.orchestrator import _is_negative_or_unanswered
+    from nga.models.answer_schema import FinalAnswer
+
+    # Negative direct answers
+    fa1 = FinalAnswer(direct_answer="No critical issues found in that shift.")
+    assert _is_negative_or_unanswered(fa1) is True
+
+    fa2 = FinalAnswer(direct_answer="0 matching records returned from the database.")
+    assert _is_negative_or_unanswered(fa2) is True
+
+    fa3 = FinalAnswer(direct_answer="I could not gather supporting evidence from the NGA database.")
+    assert _is_negative_or_unanswered(fa3) is True
+
+    # Fully unanswered query
+    fa4 = FinalAnswer(
+        direct_answer="Unable to process.",
+        answered_questions=[],
+        unanswered_questions=["What is the status?"],
+        findings=[],
+    )
+    assert _is_negative_or_unanswered(fa4) is True
+
+    # Normal positive answer should NOT be marked negative
+    fa5 = FinalAnswer(
+        direct_answer="Station 168 has 3 lug nuts torqued to 96.8 Nm.",
+        findings=["Defect class A detected"],
+    )
+    assert _is_negative_or_unanswered(fa5) is False
+
+
+def test_summarize_tool_results_formats_sql():
+    """_summarize_tool_results formats SQL output into human-readable [SQL QUERY RESULT]."""
+    import json
+
+    from langchain_core.messages import ToolMessage
+
+    from nga.graph.orchestrator import _summarize_tool_results
+
+    sql_payload = {
+        "query": "SELECT * FROM defects WHERE defect_class = 'A'",
+        "rows": [
+            {"id": 1, "vin": "NGA-001", "defect_code": "TORQUE-LOW", "defect_class": "A"}
+        ],
+        "row_count": 1,
+        "tables": ["defects"],
+    }
+    tool_msg = ToolMessage(
+        name="query_nga_database",
+        content=json.dumps(sql_payload),
+        tool_call_id="tc_sql",
+    )
+
+    summary = _summarize_tool_results([tool_msg])
+    assert "[SQL QUERY RESULT]" in summary
+    assert "Query: SELECT * FROM defects" in summary
+    assert "defect_class=A" in summary
+    assert "tables: defects" in summary
+
+
+def test_synthesis_bypasses_grounding_for_negative_answer(monkeypatch):
+    """Negative/fallback answers escape hallucination quarantine in synthesis node."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "mock-openrouter-key")
+    from langchain_core.messages import HumanMessage, ToolMessage
+
+    from nga.config import Settings
+    from nga.graph.orchestrator import _make_synthesis_node
+    from nga.graph.state import AgentState
+
+    settings = Settings.from_env()
+    synthesis_node = _make_synthesis_node(settings)
+
+    human = HumanMessage(content="Any critical issues in Shift C?")
+    tool_msg = ToolMessage(
+        name="query_nga_database",
+        content='{"query": "SELECT * FROM defects", "rows": [], "row_count": 0, "tables": ["defects"]}',
+        tool_call_id="tc1",
+    )
+    # Mock LLM answering with a negative result
+    ai_raw = AIMessage(
+        content='{"direct_answer": "No critical issues occurred in that shift.", "findings": [], "evidence": []}'
+    )
+
+    state: AgentState = {
+        "messages": [human, tool_msg, ai_raw],
+        "question_parts": ["Any critical issues in Shift C?"],
+        "answered_parts": [],
+        "unanswered_parts": [],
+        "sql_results": [],
+        "retrieved_docs": [],
+        "final_answer": None,
+        "pending_recommendation": None,
+        "user_role": "manager",
+        "user_level": 4,
+        "model_route": None,
+        "evidence_sufficiency": None,
+        "token_usage": None,
+        "fact_groundedness": None,
+        "fanout_plan": None,
+        "contradiction_resolution": None,
+    }
+
+    mock_llm = MagicMock()
+    mock_structured = MagicMock()
+    mock_structured.invoke.return_value = {
+        "direct_answer": "No critical issues occurred in that shift.",
+        "findings": [],
+        "evidence": [],
+    }
+    mock_llm.with_structured_output.return_value = mock_structured
+
+    # evaluate_fact_groundedness should NOT even be called for negative/fallback answers
+    with patch("nga.graph.orchestrator.make_chat_model", return_value=mock_llm), \
+         patch("nga.graph.orchestrator.evaluate_fact_groundedness") as mock_grounding:
+        res = synthesis_node(state)
+        mock_grounding.assert_not_called()
+
+        fa = res.get("final_answer") or {}
+        # Must NOT be replaced with quarantine notice
+        assert "Grounding Verification Alert" not in fa.get("direct_answer", "")
+        assert "No critical issues" in fa.get("direct_answer", "")
+        # Grounding status is marked bypassed
+        fg = res.get("fact_groundedness") or {}
+        assert fg.get("source") == "negative_result_bypass"
+        assert fg.get("is_grounded") is True
+
 

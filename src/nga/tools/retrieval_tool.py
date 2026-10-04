@@ -6,6 +6,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+from nga.tracing import traceable_if_enabled
+
 logger = logging.getLogger(__name__)
 
 # NGA document categories for retrieval routing
@@ -35,6 +37,7 @@ def normalize_categories(category: str | list[str] | None) -> list[str]:
     return result or list(VALID_CATEGORIES)
 
 
+@traceable_if_enabled(run_type="retriever", name="retrieval._search_one_category")
 def _search_one_category(
     store: Any,
     query: str,
@@ -66,6 +69,7 @@ def _search_one_category(
     ]
 
 
+@traceable_if_enabled(run_type="retriever", name="retrieval.retrieve_documents")
 def retrieve_documents(
     store: Any,
     query: str,
@@ -137,6 +141,7 @@ def retrieve_documents(
     )
 
 
+@traceable_if_enabled(run_type="retriever", name="retrieval.retrieve_graph_evidence")
 def retrieve_graph_evidence(
     graph: Any,
     embeddings: Any,

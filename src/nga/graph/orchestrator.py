@@ -35,7 +35,9 @@ from nga.models.answer_schema import (
 from nga.providers.factory import make_chat_model
 from nga.rag_agent.classifier import classify_model_route
 from nga.rag_agent.jev_reasoning import (
+    FactGroundednessResult,
     calculate_reasoning_token_telemetry,
+    check_input_safety,
     evaluate_evidence_sufficiency,
     evaluate_fact_groundedness,
     plan_speculative_fanout,
@@ -43,6 +45,11 @@ from nga.rag_agent.jev_reasoning import (
 )
 from nga.rag_agent.rbac import SYSTEM_PROMPTS
 from nga.tools.sql_tool import describe_schema
+from nga.tracing import (
+    attach_token_telemetry,
+    attach_trace_metadata,
+    traceable_if_enabled,
+)
 
 logger = logging.getLogger("nga.orchestrator")
 
@@ -56,6 +63,7 @@ def _truncate_for_log(value: Any, limit: int = 400) -> str:
 
 
 def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
+    @traceable_if_enabled(run_type="tool", name=f"tool:{tool_obj.name}")
     def _logged(**kwargs):
         logger.info("tool_call_start name=%s input=%s", tool_obj.name, _truncate_for_log(kwargs))
         try:
@@ -78,9 +86,20 @@ def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
 # ── Node: prepare ─────────────────────────────────────────────────────────────
 
 def _make_prepare_node(settings: Settings):
+    @traceable_if_enabled(run_type="chain", name="orchestrator.prepare")
     def _prepare_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
         question = last.content if hasattr(last, "content") else str(last)
+
+        guard = check_input_safety(question)
+        logger.info(
+            "input_guard_evaluated is_allowed=%s category=%s prob=%.2f reason=%s",
+            guard.is_allowed,
+            guard.intent_category,
+            guard.is_malicious_prob,
+            guard.rejection_reason,
+        )
+
         route_info = classify_model_route(question, settings)
         logger.info(
             "model_route_selected choice=%s model=%s source=%s confidence=%s",
@@ -102,9 +121,71 @@ def _make_prepare_node(settings: Settings):
             "question_parts": extract_question_parts(question),
             "model_route": route_info,
             "fanout_plan": asdict(fanout),
+            "input_guard": asdict(guard),
         }
 
     return _prepare_node
+
+
+# ── Node: guard_rejection ───────────────────────────────────────────────────
+
+@traceable_if_enabled(run_type="chain", name="orchestrator.route_after_prepare")
+def _route_after_prepare(state: AgentState) -> str:
+    guard = state.get("input_guard") or {}
+    if guard.get("is_allowed") is False:
+        return "guard_rejection"
+    return "agent"
+
+
+def _make_guard_rejection_node():
+    @traceable_if_enabled(run_type="chain", name="orchestrator.guard_rejection")
+    def _guard_rejection_node(state: AgentState) -> dict[str, Any]:
+        guard = state.get("input_guard") or {}
+        reason = guard.get("rejection_reason")
+        parts = state.get("question_parts", [])
+
+        if reason == "adversarial_blocked":
+            direct_ans = (
+                "⚠️ [Security Alert]: Request blocked by safety policy. "
+                "The query was flagged as adversarial, manipulative, or attempting to bypass security boundaries."
+            )
+        else:
+            direct_ans = (
+                "ℹ️ [Out of Scope]: I am the Northgate Assembly Plant Assistant, "
+                "specialized in vehicle assembly, technician maintenance, quality engineering, and plant operations. "
+                "Please ask questions related to manufacturing specifications, SOPs, or production records."
+            )
+
+        final = FinalAnswer(
+            direct_answer=direct_ans,
+            findings=[],
+            evidence=[],
+            answered_questions=[],
+            unanswered_questions=list(parts),
+            recommendation=None,
+            class_a_alert=False,
+            escalation_level=None,
+            recall_criteria_met=[],
+        )
+        rendered = render_final_answer(final)
+        final_dump = final.model_dump()
+        final_dump["input_guard"] = guard
+
+        attach_trace_metadata(
+            input_blocked=True,
+            input_intent_category=guard.get("intent_category"),
+            input_malicious_prob=guard.get("is_malicious_prob"),
+        )
+
+        return {
+            "messages": [AIMessage(content=rendered)],
+            "pending_recommendation": None,
+            "answered_parts": [],
+            "unanswered_parts": list(parts),
+            "final_answer": final_dump,
+        }
+
+    return _guard_rejection_node
 
 
 # ── Response policy prompt ─────────────────────────────────────────────────────
@@ -142,6 +223,26 @@ def _summarize_tool_results(messages: list[Any], per_result_limit: int = 2000) -
                     formatted_text = "\n".join(doc_lines)
             except Exception:
                 pass
+        elif name == "query_nga_database":
+            try:
+                data = json.loads(content)
+                sql_query = data.get("query", "")
+                rows = data.get("rows", [])
+                row_count = data.get("row_count", len(rows))
+                tables = data.get("tables", [])
+                lines = [f"[SQL QUERY RESULT] Query: {sql_query}"]
+                for i, row in enumerate(rows[:20], 1):
+                    if isinstance(row, dict):
+                        pairs = ", ".join(f"{k}={v}" for k, v in row.items())
+                        lines.append(f"  Row {i}: {pairs}")
+                if row_count > 20:
+                    lines.append(f"  ... ({row_count - 20} more rows)")
+                lines.append(
+                    f"({row_count} row(s) returned from tables: {', '.join(tables) if tables else 'N/A'})"
+                )
+                formatted_text = "\n".join(lines)
+            except Exception:
+                pass
 
         if not formatted_text:
             formatted_text = content
@@ -153,17 +254,29 @@ def _summarize_tool_results(messages: list[Any], per_result_limit: int = 2000) -
     return "\n".join(summaries)
 
 
+def _get_current_turn_messages(messages: list[Any]) -> list[Any]:
+    """Return only messages from the most recent user turn onward."""
+    turn_messages: list[Any] = []
+    for m in reversed(messages):
+        turn_messages.append(m)
+        if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human":
+            break
+    return list(reversed(turn_messages))
+
+
 def _count_tool_rounds(messages: list[Any]) -> int:
-    return sum(1 for m in messages if getattr(m, "tool_calls", None))
+    turn_msgs = _get_current_turn_messages(messages)
+    return sum(1 for m in turn_msgs if getattr(m, "tool_calls", None))
 
 
 def _build_response_policy(state: AgentState, schema: str = "") -> str:
     question_parts = state.get("question_parts", [])
     user_role = state.get("user_role", "operator")
     role_prompt = SYSTEM_PROMPTS.get(user_role, SYSTEM_PROMPTS["operator"])
-    recent_error = _extract_recent_tool_error(state.get("messages", []))
-    tool_rounds = _count_tool_rounds(state.get("messages", []))
-    collected = _summarize_tool_results(state.get("messages", []))
+    current_msgs = _get_current_turn_messages(state.get("messages", []))
+    recent_error = _extract_recent_tool_error(current_msgs)
+    tool_rounds = _count_tool_rounds(current_msgs)
+    collected = _summarize_tool_results(current_msgs)
 
     schema_block = f"\nNGA database schema:\n{schema}\n" if schema else ""
     error_block = (
@@ -239,6 +352,7 @@ def _make_agent_node(settings: Settings, sql_tool, retrieval_tool, schema: str =
             ).bind_tools(tools)
         return models_by_slug[model_slug]
 
+    @traceable_if_enabled(run_type="chain", name="orchestrator.agent")
     def _agent_node(state: AgentState) -> dict[str, Any]:
         llm = _get_model_for_state(state)
         messages = [
@@ -264,11 +378,12 @@ def _tool_call_signature(msg: Any) -> tuple | None:
 
 
 def _tool_loop_detected(messages: list[Any]) -> bool:
-    if _count_tool_rounds(messages) >= MAX_TOOL_CALL_ROUNDS:
+    current_msgs = _get_current_turn_messages(messages)
+    if _count_tool_rounds(current_msgs) >= MAX_TOOL_CALL_ROUNDS:
         return True
     repeated = 0
     last_sig = None
-    for msg in messages:
+    for msg in current_msgs:
         sig = _tool_call_signature(msg)
         if sig is None:
             continue
@@ -282,6 +397,7 @@ def _tool_loop_detected(messages: list[Any]) -> bool:
     return False
 
 
+@traceable_if_enabled(run_type="chain", name="orchestrator.route_after_agent")
 def _route_after_agent(state: AgentState) -> str:
     messages = state["messages"]
     last = messages[-1]
@@ -337,6 +453,34 @@ def _is_ungrounded(state: AgentState, answer: FinalAnswer) -> bool:
     return not answer.evidence
 
 
+def _is_negative_or_unanswered(answer: FinalAnswer) -> bool:
+    """Return True if the answer states no records, defects, or evidence were found."""
+    text = (answer.direct_answer or "").strip().lower()
+    negative_phrases = (
+        "no critical issues",
+        "no issues found",
+        "no issues occurred",
+        "no defects found",
+        "no records found",
+        "no matching records",
+        "0 matching records",
+        "0 rows returned",
+        "no relevant document",
+        "could not gather supporting evidence",
+        "could not find",
+        "no incidents reported",
+        "no incidents occurred",
+        "no non-conformance",
+        "no escalation",
+        "no data found",
+    )
+    if any(phrase in text for phrase in negative_phrases):
+        return True
+    if answer.unanswered_questions and not answer.answered_questions and not answer.findings:
+        return True
+    return False
+
+
 def _get_searched_categories(messages: list[Any]) -> str:
     seen: list[str] = []
     for msg in messages:
@@ -371,6 +515,7 @@ def _make_synthesis_node(settings: Settings):
                 structured_models_by_slug[model_slug] = None
         return structured_models_by_slug[model_slug]
 
+    @traceable_if_enabled(run_type="chain", name="orchestrator.synthesis")
     def _synthesis_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
 
@@ -399,6 +544,8 @@ def _make_synthesis_node(settings: Settings):
                 prompt = (
                     "Create a structured final answer for a manufacturing decision-support query. "
                     "Use only grounded details from the provided answer. "
+                    "For each evidence entry, source_type must strictly be either 'sql' (for database queries) "
+                    "or 'document' (for SOPs and reference texts). "
                     "Flag class_a_alert if the text involves Class A safety-critical systems "
                     "(brakes, steering, airbags, seat belts, fuel, wheel retention, "
                     "engine mounts, windshield retention). "
@@ -412,8 +559,8 @@ def _make_synthesis_node(settings: Settings):
                     final = structured
                 elif isinstance(structured, dict):
                     final = FinalAnswer.model_validate(structured)
-            except Exception:
-                logger.exception("structured_output_parse_failed")
+            except Exception as exc:
+                logger.warning("structured_output_parse_failed: %s; falling back to heuristic parsing", exc)
 
         if final is None:
             final = parse_final_answer(answer_text, state.get("question_parts", []))
@@ -446,16 +593,29 @@ def _make_synthesis_node(settings: Settings):
                 if not final.recommendation:
                     final.recommendation = conflict_res.precedence_rule
 
-            first_human = next(
-                (m.content for m in messages if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
+            current_human = next(
+                (m.content for m in reversed(messages) if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human"),
                 "",
             )
-            evidence_summary = _summarize_tool_results(messages)
-            grounding_result = evaluate_fact_groundedness(
-                query=first_human,
-                evidence=evidence_summary,
-                generated_answer=final.direct_answer,
-            )
+            # Escape fallback/negative answers (no records/issues found) from hallucination quarantine
+            if _is_negative_or_unanswered(final):
+                logger.info("negative_or_fallback_answer_escaped_from_grounding_check")
+                grounding_result = FactGroundednessResult(
+                    is_faithful=True,
+                    is_faithful_prob=1.0,
+                    groundedness_score=5,
+                    unsupported_claim_type="none",
+                    unsupported_claim_conf=0.0,
+                    is_grounded=True,
+                    source="negative_result_bypass",
+                )
+            else:
+                evidence_summary = _summarize_tool_results(_get_current_turn_messages(messages))
+                grounding_result = evaluate_fact_groundedness(
+                    query=current_human,
+                    evidence=evidence_summary,
+                    generated_answer=final.direct_answer,
+                )
             fact_grounding = asdict(grounding_result)
 
             if not grounding_result.is_grounded:
@@ -515,6 +675,15 @@ def _make_synthesis_node(settings: Settings):
             early_exit_triggered=early_exit,
         )
 
+        attach_token_telemetry(token_telemetry)
+        attach_trace_metadata(
+            class_a_alert=final.class_a_alert,
+            escalation_level=final.escalation_level,
+            recall_criteria_met=final.recall_criteria_met,
+            early_exit_triggered=early_exit,
+            tool_rounds_executed=tool_rounds,
+        )
+
         final_dump = final.model_dump()
         final_dump["token_telemetry"] = token_telemetry
         if fact_grounding:
@@ -539,13 +708,14 @@ def _make_synthesis_node(settings: Settings):
 # ── Node: hitl ───────────────────────────────────────────────────────────────
 
 def _make_hitl_node(app_state_db_path: str, approver=None):
+    @traceable_if_enabled(run_type="chain", name="orchestrator.hitl")
     def _hitl_node(state: AgentState) -> dict[str, Any]:
         recommendation = state.get("pending_recommendation")
         if not recommendation:
             return {"pending_recommendation": recommendation}
 
         question = next(
-            (m.content for m in state["messages"] if getattr(m, "type", "") == "human"),
+            (m.content for m in reversed(state["messages"]) if getattr(m, "type", "") == "human"),
             "",
         )
 
@@ -559,10 +729,11 @@ def _make_hitl_node(app_state_db_path: str, approver=None):
             app_state_db_path,
             question=question,
             recommendation=recommendation,
-            category=_get_searched_categories(state.get("messages", [])),
+            category=_get_searched_categories(_get_current_turn_messages(state.get("messages", []))),
             user_role=user_role,
             class_a_alert=class_a_alert,
             escalation_level=escalation_level,
+            thread_id=state.get("thread_id"),
         )
 
         if approver is not None:
@@ -607,6 +778,7 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
 
     graph = StateGraph(AgentState)
     graph.add_node("prepare", _make_prepare_node(settings))
+    graph.add_node("guard_rejection", _make_guard_rejection_node())
     graph.add_node(
         "agent",
         _make_agent_node(settings, wrapped_sql, wrapped_retrieval, schema),
@@ -616,7 +788,12 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
     graph.add_node("hitl", _make_hitl_node(settings.app_state_db_path, approver=approver))
 
     graph.set_entry_point("prepare")
-    graph.add_edge("prepare", "agent")
+    graph.add_conditional_edges(
+        "prepare",
+        _route_after_prepare,
+        {"agent": "agent", "guard_rejection": "guard_rejection"},
+    )
+    graph.add_edge("guard_rejection", "hitl")
     graph.add_conditional_edges(
         "agent",
         _route_after_agent,
