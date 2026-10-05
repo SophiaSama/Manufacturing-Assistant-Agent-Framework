@@ -85,7 +85,7 @@ def _wrap_tool_with_logging(tool_obj: BaseTool) -> BaseTool:
 
 # ── Node: prepare ─────────────────────────────────────────────────────────────
 
-def _make_prepare_node(settings: Settings):
+def _make_prepare_node(settings: Settings, episodic_memory=None):
     @traceable_if_enabled(run_type="chain", name="orchestrator.prepare")
     def _prepare_node(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
@@ -117,11 +117,24 @@ def _make_prepare_node(settings: Settings):
             fanout.cross_source_depth,
             fanout.recommended_sources,
         )
+
+        episodic_memories = []
+        if settings.headroom_memory_enabled and episodic_memory is not None:
+            try:
+                user_role = state.get("user_role", "operator")
+                episodic_memories = episodic_memory.recall_similar_incidents(
+                    question, user_id=user_role, top_k=settings.headroom_memory_top_k
+                )
+                logger.info("recalled_episodic_memories count=%d", len(episodic_memories))
+            except Exception as exc:
+                logger.warning("episodic_memory_recall_failed err=%s", exc)
+
         return {
             "question_parts": extract_question_parts(question),
             "model_route": route_info,
             "fanout_plan": asdict(fanout),
             "input_guard": asdict(guard),
+            "episodic_memories": episodic_memories,
         }
 
     return _prepare_node
@@ -311,6 +324,21 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
         if contradiction and contradiction.get("has_contradiction") else ""
     )
 
+    episodic_memories = state.get("episodic_memories") or []
+    memory_block = ""
+    if episodic_memories:
+        mem_lines = [
+            f"- {m.get('content', '').strip()} (score: {m.get('score', 0):.2f})"
+            for m in episodic_memories
+            if m.get("content")
+        ]
+        if mem_lines:
+            memory_block = (
+                "\n[HISTORICAL RESOLUTION MEMORIES]:\n"
+                + "\n".join(mem_lines)
+                + "\n"
+            )
+
     return (
         f"{role_prompt}\n\n"
         "Rules:\n"
@@ -331,15 +359,28 @@ def _build_response_policy(state: AgentState, schema: str = "") -> str:
         "answered_questions (list), unanswered_questions (list), recommendation (optional), "
         "class_a_alert (bool), escalation_level (string or null), "
         "recall_criteria_met (list of criteria codes like C1, C2 ...).\n"
-        f"{fanout_block}{conflict_block}{schema_block}{error_block}{collected_block}{escalation_block}"
+        "7) VERBATIM EVIDENCE: If retrieved data contains markers like [Compressed ... | hash=abc123] "
+        "and you require full uncompressed clauses, exact numerical tolerances, or Class A safety limits, "
+        "call retrieve_uncompressed_evidence(content_hash='abc123') to verify original text.\n"
+        f"{fanout_block}{conflict_block}{memory_block}{schema_block}{error_block}{collected_block}{escalation_block}"
         f"\nQuestion parts: {question_parts}"
     )
 
 
 # ── Node: agent ──────────────────────────────────────────────────────────────
 
-def _make_agent_node(settings: Settings, sql_tool, retrieval_tool, schema: str = ""):
+def _make_agent_node(
+    settings: Settings,
+    sql_tool,
+    retrieval_tool,
+    schema: str = "",
+    headroom_mgr=None,
+    retrieve_evidence_tool=None,
+):
     tools = [sql_tool, retrieval_tool]
+    if retrieve_evidence_tool is not None:
+        tools.append(retrieve_evidence_tool)
+
     # Cache chat models per model identifier to avoid repeated client instantiation
     models_by_slug: dict[str, Any] = {}
 
@@ -355,9 +396,18 @@ def _make_agent_node(settings: Settings, sql_tool, retrieval_tool, schema: str =
     @traceable_if_enabled(run_type="chain", name="orchestrator.agent")
     def _agent_node(state: AgentState) -> dict[str, Any]:
         llm = _get_model_for_state(state)
+        raw_messages = state["messages"]
+
+        if settings.headroom_compression_enabled and headroom_mgr is not None:
+            processed_messages = headroom_mgr.compress_message_history(
+                raw_messages, protect_recent=2
+            )
+        else:
+            processed_messages = raw_messages
+
         messages = [
             SystemMessage(content=_build_response_policy(state, schema)),
-            *state["messages"],
+            *processed_messages,
         ]
         response = llm.invoke(messages)
         return {"messages": [response]}
@@ -707,7 +757,7 @@ def _make_synthesis_node(settings: Settings):
 
 # ── Node: hitl ───────────────────────────────────────────────────────────────
 
-def _make_hitl_node(app_state_db_path: str, approver=None):
+def _make_hitl_node(app_state_db_path: str, approver=None, episodic_memory=None):
     @traceable_if_enabled(run_type="chain", name="orchestrator.hitl")
     def _hitl_node(state: AgentState) -> dict[str, Any]:
         recommendation = state.get("pending_recommendation")
@@ -725,11 +775,13 @@ def _make_hitl_node(app_state_db_path: str, approver=None):
         escalation_level = final_dict.get("escalation_level")
         user_role = state.get("user_role", "operator")
 
+        category = _get_searched_categories(_get_current_turn_messages(state.get("messages", [])))
+
         decision_id = insert_recommendation(
             app_state_db_path,
             question=question,
             recommendation=recommendation,
-            category=_get_searched_categories(_get_current_turn_messages(state.get("messages", []))),
+            category=category,
             user_role=user_role,
             class_a_alert=class_a_alert,
             escalation_level=escalation_level,
@@ -751,6 +803,20 @@ def _make_hitl_node(app_state_db_path: str, approver=None):
                 escalation_level=escalation_level,
             )
         update_decision(app_state_db_path, decision_id, status=status, approver=note)
+
+        if status == "approved" and episodic_memory is not None:
+            try:
+                episodic_memory.record_approved_decision(
+                    question=question,
+                    recommendation=recommendation,
+                    category=category,
+                    class_a_alert=class_a_alert,
+                    approver=note or "Authorized Approver",
+                    user_id=user_role,
+                )
+            except Exception as exc:
+                logger.warning("failed_to_record_episodic_memory err=%s", exc)
+
         return {"pending_recommendation": recommendation}
 
     return _hitl_node
@@ -758,8 +824,15 @@ def _make_hitl_node(app_state_db_path: str, approver=None):
 
 # ── Graph assembly ────────────────────────────────────────────────────────────
 
-def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_tool,
-                       approver=None):
+def build_orchestrator(
+    settings: Settings,
+    checkpointer,
+    sql_tool,
+    retrieval_tool,
+    approver=None,
+    headroom_mgr=None,
+    episodic_memory=None,
+):
     """Build and compile the NGA LangGraph orchestrator.
 
     `approver`: optional callable(recommendation, *, class_a_alert,
@@ -769,6 +842,28 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
     """
     wrapped_sql = _wrap_tool_with_logging(sql_tool)
     wrapped_retrieval = _wrap_tool_with_logging(retrieval_tool)
+    all_tools = [wrapped_sql, wrapped_retrieval]
+    wrapped_retrieve_evidence = None
+
+    if settings.headroom_enabled:
+        from nga.compression.manager import HeadroomManager
+
+        if headroom_mgr is None:
+            headroom_mgr = HeadroomManager(
+                target_ratio=settings.headroom_compression_ratio,
+                min_tokens=settings.headroom_min_tokens_to_compress,
+                enabled=settings.headroom_compression_enabled,
+            )
+        from nga.tools.tool_factory import make_headroom_retrieve_tool
+
+        retrieve_evidence_tool = make_headroom_retrieve_tool(headroom_mgr)
+        wrapped_retrieve_evidence = _wrap_tool_with_logging(retrieve_evidence_tool)
+        all_tools.append(wrapped_retrieve_evidence)
+
+        if settings.headroom_memory_enabled and episodic_memory is None:
+            from nga.memory.headroom_memory import NgaEpisodicMemory
+
+            episodic_memory = NgaEpisodicMemory(db_path=settings.headroom_memory_db_path)
 
     try:
         schema = describe_schema(settings.nga_db_path)
@@ -777,15 +872,29 @@ def build_orchestrator(settings: Settings, checkpointer, sql_tool, retrieval_too
         schema = ""
 
     graph = StateGraph(AgentState)
-    graph.add_node("prepare", _make_prepare_node(settings))
+    graph.add_node("prepare", _make_prepare_node(settings, episodic_memory=episodic_memory))
     graph.add_node("guard_rejection", _make_guard_rejection_node())
     graph.add_node(
         "agent",
-        _make_agent_node(settings, wrapped_sql, wrapped_retrieval, schema),
+        _make_agent_node(
+            settings,
+            wrapped_sql,
+            wrapped_retrieval,
+            schema=schema,
+            headroom_mgr=headroom_mgr,
+            retrieve_evidence_tool=wrapped_retrieve_evidence,
+        ),
     )
-    graph.add_node("tools", ToolNode([wrapped_sql, wrapped_retrieval]))
+    graph.add_node("tools", ToolNode(all_tools))
     graph.add_node("synthesis", _make_synthesis_node(settings))
-    graph.add_node("hitl", _make_hitl_node(settings.app_state_db_path, approver=approver))
+    graph.add_node(
+        "hitl",
+        _make_hitl_node(
+            settings.app_state_db_path,
+            approver=approver,
+            episodic_memory=episodic_memory,
+        ),
+    )
 
     graph.set_entry_point("prepare")
     graph.add_conditional_edges(

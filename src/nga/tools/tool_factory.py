@@ -16,8 +16,13 @@ from nga.tools.retrieval_tool import (
 from nga.tools.sql_tool import SqlValidationError, run_query
 
 
-def make_sql_tool(db_path: str, cache: Any | None = None):
-    """Create a read-only SQL tool over nga.db (optionally cached, L2)."""
+def make_sql_tool(
+    db_path: str,
+    cache: Any | None = None,
+    headroom_mgr: Any | None = None,
+    session_id: str = "default",
+):
+    """Create a read-only SQL tool over nga.db (optionally cached, L2, and compressed)."""
 
     @tool
     def query_nga_database(sql: str) -> str:
@@ -49,14 +54,25 @@ def make_sql_tool(db_path: str, cache: Any | None = None):
             return f"Query not allowed: {e}"
 
         cached = cached_run_query(_run, sql=sql, db_path=db_path, cache=cache)
+        if headroom_mgr is not None:
+            return headroom_mgr.compress_tool_output(
+                "query_nga_database", cached, session_id=session_id
+            )
         return cached
 
     return query_nga_database
 
 
-def make_retrieval_tool(store, graph=None, embeddings=None, user_level: int = 1,
-                        cache: Any | None = None):
-    """Create a hybrid document retrieval tool with RBAC enforcement.
+def make_retrieval_tool(
+    store,
+    graph=None,
+    embeddings=None,
+    user_level: int = 1,
+    cache: Any | None = None,
+    headroom_mgr: Any | None = None,
+    session_id: str = "default",
+):
+    """Create a hybrid document retrieval tool with RBAC enforcement and optional compression.
 
     When a knowledge graph is provided, results are enriched with graph
     entities, relations, and community summaries.
@@ -65,6 +81,7 @@ def make_retrieval_tool(store, graph=None, embeddings=None, user_level: int = 1,
                 3=engineer, 4=manager).
     cache: optional NgaCache; when None the active cache_scope is used
            (eval hot mode) or caching is disabled (cold).
+    headroom_mgr: optional HeadroomManager for context compression.
     """
 
     def _run(query: str, categories: list[str]) -> dict:
@@ -97,6 +114,32 @@ def make_retrieval_tool(store, graph=None, embeddings=None, user_level: int = 1,
         """
         cats = normalize_categories(categories)
         payload = _run(query, cats)
-        return json.dumps(payload, default=str)
+        raw_json = json.dumps(payload, default=str)
+        if headroom_mgr is not None:
+            return headroom_mgr.compress_tool_output(
+                "search_sop_documents", raw_json, session_id=session_id
+            )
+        return raw_json
 
     return search_sop_documents
+
+
+def make_headroom_retrieve_tool(
+    headroom_mgr: Any,
+    session_id: str = "default",
+):
+    """Create tool allowing the agent to fetch verbatim uncompressed evidence by hash."""
+
+    @tool
+    def retrieve_uncompressed_evidence(content_hash: str) -> str:
+        """Retrieve original verbatim uncompressed text using a Headroom content hash.
+
+        Use this tool when you need exact numerical tolerances, strict safety compliance clauses,
+        or full procedure steps for Class A decisions that may be referenced with [hash=...].
+        """
+        raw = headroom_mgr.store.get(session_id, content_hash)
+        if raw is not None:
+            return raw
+        return f"Error: No uncompressed content found for hash '{content_hash}' in session '{session_id}'."
+
+    return retrieve_uncompressed_evidence
