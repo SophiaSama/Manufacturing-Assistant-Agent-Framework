@@ -27,17 +27,17 @@ NGA_ONTOLOGY_RULES: dict[str, tuple[set[str], set[str]]] = {
     "indicates": ({"machine", "threshold", "sensor", "station"}, {"faultcode", "defectcode"}),
     "prevents": ({"sop", "procedure"}, {"faultcode", "defectcode", "ncrecord"}),
     "monitors": ({"machine", "station", "personnel"}, {"machine", "threshold", "torque", "station"}),
-    "threshold_for": ({"sop", "procedure", "machine", "station"}, {"threshold", "torque"}),
+    "threshold_for": ({"sop", "procedure", "machine", "station", "part"}, {"threshold", "torque"}),
     "documented_in": (
-        {"threshold", "torque", "machine", "faultcode", "sop", "station"},
+        {"threshold", "torque", "machine", "faultcode", "sop", "station", "procedure", "defectcode", "ncrecord"},
         {"sop", "station", "procedure"},
     ),
     "escalates_to": ({"defectcode", "ncrecord", "faultcode"}, {"escalationlevel", "personnel", "role"}),
     "requires": (
-        {"sop", "procedure", "defectcode", "ncrecord"},
-        {"machine", "procedure", "sop", "personnel", "torque"},
+        {"sop", "procedure", "defectcode", "ncrecord", "workorder"},
+        {"machine", "procedure", "sop", "personnel", "torque", "part", "station"},
     ),
-    "audited_by": ({"machine", "station", "torque"}, {"machine", "personnel"}),
+    "audited_by": ({"machine", "station", "torque", "workorder", "sop", "procedure"}, {"machine", "personnel"}),
     "triggers_recall": ({"defectcode", "ncrecord", "faultcode"}, {"recallcriteria"}),
 }
 

@@ -27,6 +27,9 @@ DEFAULT_RELEASE_CRITERIA = {
     "require_sql_sanitization": True,
     "min_grounding_score": 0.85,
     "max_fabricated_citations": 0,
+    "min_graph_quality_index": 0.80,
+    "max_isolated_node_ratio": 0.25,
+    "min_provenance_coverage": 0.80,
 }
 
 
@@ -174,6 +177,50 @@ def evaluate_release_gate(
         }
         if not check_tcer:
             reasons.append(f"Candidate average TCER ({cand_tcer:.3f}) exceeded {max_tcer:.2f} ceiling")
+
+    # 8. Graph Quality and Health Criteria (evaluated when graph_quality is present)
+    cand_gq = candidate_report.get("graph_quality") or candidate_report.get("graph_quality_metrics")
+    if cand_gq:
+        gqi = float(cand_gq.get("graph_quality_index", 0.0))
+        min_gqi = float(crit.get("min_graph_quality_index", 0.80))
+        check_gqi = gqi >= min_gqi
+        checks["graph_quality_index"] = {
+            "passed": check_gqi,
+            "actual": f"{gqi:.4f}",
+            "required": f"≥ {min_gqi:.2f}",
+        }
+        if not check_gqi:
+            reasons.append(
+                f"Graph Quality Index ({gqi:.4f}) dropped below {min_gqi:.2f} threshold"
+            )
+
+        health = cand_gq.get("graph_health", {})
+        if health:
+            iso_ratio = float(health.get("isolated_node_ratio", 0.0))
+            max_iso = float(crit.get("max_isolated_node_ratio", 0.25))
+            check_iso = iso_ratio <= max_iso
+            checks["graph_isolated_nodes"] = {
+                "passed": check_iso,
+                "actual": f"{round(iso_ratio * 100, 1)}%",
+                "required": f"≤ {round(max_iso * 100, 1)}%",
+            }
+            if not check_iso:
+                reasons.append(
+                    f"Graph isolated node ratio ({round(iso_ratio * 100, 1)}%) exceeded {round(max_iso * 100, 1)}% ceiling"
+                )
+
+            prov_cov = float(health.get("provenance_coverage", 1.0))
+            min_prov = float(crit.get("min_provenance_coverage", 0.80))
+            check_prov = prov_cov >= min_prov
+            checks["graph_provenance_coverage"] = {
+                "passed": check_prov,
+                "actual": f"{round(prov_cov * 100, 1)}%",
+                "required": f"≥ {round(min_prov * 100, 1)}%",
+            }
+            if not check_prov:
+                reasons.append(
+                    f"Graph provenance coverage ({round(prov_cov * 100, 1)}%) below {round(min_prov * 100, 1)}% threshold"
+                )
 
     passed_checks_count = sum(1 for c in checks.values() if c["passed"])
     total_checks_count = len(checks)

@@ -41,9 +41,9 @@ def sample_graph_with_duplicates():
 
 def test_env_resolution_defaults(monkeypatch):
     """Test dynamic model and API key environment variable resolution."""
-    # Test model defaults back to jev-1.12 if unset
+    # Test model defaults back to jev-latest if unset
     monkeypatch.delenv("TYPESAFE_MODEL", raising=False)
-    assert get_typesafe_model() == "jev-1.12"
+    assert get_typesafe_model() == "jev-latest"
 
     # Test model override via env var
     monkeypatch.setenv("TYPESAFE_MODEL", "jev-custom-test")

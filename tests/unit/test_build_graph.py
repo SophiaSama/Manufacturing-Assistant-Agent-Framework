@@ -37,6 +37,10 @@ def test_canonical_id_normalizes_variants():
 
 def test_check_relation_rules():
     assert check_relation("requires", "sop", "machine") is None
+    assert check_relation("requires", "sop", "part") is None
+    assert check_relation("requires", "sop", "station") is None
+    assert check_relation("requires", "workorder", "machine") is None
+    assert check_relation("documented_in", "procedure", "sop") is None
     assert check_relation("requires", "machine", "sop") is not None
     assert check_relation("bogus", "sop", "machine") is not None
     assert check_relation("requires", "", "machine") is not None

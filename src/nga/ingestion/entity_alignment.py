@@ -56,8 +56,8 @@ def get_typesafe_api_key() -> str | None:
 
 
 def get_typesafe_model() -> str:
-    """Resolve TypeSafe model, defaulting back to jev-1.12 if not set."""
-    return os.environ.get("TYPESAFE_MODEL", "jev-1.12")
+    """Resolve TypeSafe model, defaulting back to jev-latest if not set."""
+    return os.environ.get("TYPESAFE_MODEL", "jev-latest")
 
 
 def create_typesafe_client(api_key: str | None = None) -> TypeSafeClient:
@@ -89,16 +89,27 @@ def _extract_codes(text: str) -> set[str]:
     return {m.replace("_", "-") for m in matches}
 
 
+def _are_types_compatible(type_a: str, type_b: str) -> bool:
+    if not type_a or not type_b or type_a == type_b:
+        return True
+    compat = {
+        frozenset(["machine", "part"]),
+        frozenset(["fault", "faultcode"]),
+        frozenset(["procedure", "sop"]),
+    }
+    return frozenset([type_a, type_b]) in compat
+
+
 def generate_candidate_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
-    """Generate candidate duplicate pairs using a fast blocking pass.
+    """Generate candidate duplicate pairs using a fast indexed blocking pass.
 
     Pairs are filtered by:
-    1. Matching or compatible entity types
-    2. Substring overlap, common technical code/number, or token similarity
+    1. Matching or compatible entity types (via type family bucketing)
+    2. Shared technical codes, substring inclusion, or token Jaccard similarity >= 0.5
     """
     candidates: set[tuple[str, str]] = set()
 
-    # Per-node features are computed once, not once per pair.
+    # Per-node features are computed once.
     features = []
     for node_id, data in graph.nodes(data=True):
         node_name = str(data.get("name", "")).lower()
@@ -112,49 +123,84 @@ def generate_candidate_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
             _extract_codes(clean) | _extract_codes(node_name),
         ))
 
-    for i in range(len(features)):
+    # Fast inverted index for technical codes
+    code_to_idx: dict[str, list[int]] = {}
+    for idx, (_, _, _, _, _, codes) in enumerate(features):
+        for c in codes:
+            code_to_idx.setdefault(c, []).append(idx)
+
+    # Bucketing by type family to prune ~90% of cross-type comparisons
+    type_families: dict[str, str] = {
+        "machine": "machinery",
+        "part": "machinery",
+        "fault": "issues",
+        "faultcode": "issues",
+        "procedure": "docs",
+        "sop": "docs",
+    }
+
+    family_buckets: dict[str, list[int]] = {}
+    generic_indices: list[int] = []
+
+    for idx, (_, ntype, _, _, _, _) in enumerate(features):
+        fam = type_families.get(ntype, ntype)
+        if not ntype or fam == "":
+            generic_indices.append(idx)
+        else:
+            family_buckets.setdefault(fam, []).append(idx)
+
+    # Candidate pair index combinations to evaluate
+    pair_indices: set[tuple[int, int]] = set()
+
+    # 1. Pairs sharing a technical code (can cross families if compatible)
+    for idxs in code_to_idx.values():
+        for i in range(len(idxs)):
+            for j in range(i + 1, len(idxs)):
+                pair_indices.add((min(idxs[i], idxs[j]), max(idxs[i], idxs[j])))
+
+    # 2. Pairs within each family bucket
+    for idxs in family_buckets.values():
+        for i in range(len(idxs)):
+            for j in range(i + 1, len(idxs)):
+                pair_indices.add((min(idxs[i], idxs[j]), max(idxs[i], idxs[j])))
+
+    # 3. Generic/untyped nodes checked against all
+    for g_idx in generic_indices:
+        for other_idx in range(len(features)):
+            if g_idx != other_idx:
+                pair_indices.add((min(g_idx, other_idx), max(g_idx, other_idx)))
+
+    for i, j in pair_indices:
         id_a, type_a, name_a, id_a_clean, tokens_a, codes_a = features[i]
+        id_b, type_b, name_b, id_b_clean, tokens_b, codes_b = features[j]
 
-        for j in range(i + 1, len(features)):
-            id_b, type_b, name_b, id_b_clean, tokens_b, codes_b = features[j]
+        if not _are_types_compatible(type_a, type_b):
+            continue
 
-            # Must have compatible types unless types are generic/missing
-            if type_a and type_b and type_a != type_b:
-                # Allow Machine/Part overlap, Fault/FaultCode overlap, Procedure/SOP overlap
-                compat = {
-                    frozenset(["machine", "part"]),
-                    frozenset(["fault", "faultcode"]),
-                    frozenset(["procedure", "sop"]),
-                }
-                if frozenset([type_a, type_b]) not in compat:
-                    continue
+        is_candidate = False
 
-            is_candidate = False
+        # Check 1: Shared technical code (e.g. "e-4012", "rb-07", "tq-6012")
+        if codes_a and codes_b and (codes_a & codes_b):
+            is_candidate = True
 
-            # Check 1: Shared technical code (e.g. "e-4012", "rb-07", "tq-6012")
-            if codes_a and codes_b:
-                if codes_a & codes_b:
-                    is_candidate = True
+        # Check 2: Substring inclusion in IDs or names
+        if not is_candidate:
+            if (
+                id_a_clean in id_b_clean
+                or id_b_clean in id_a_clean
+                or (name_a and name_b and (name_a in name_b or name_b in name_a))
+            ):
+                is_candidate = True
 
-            # Check 2: Substring inclusion in IDs or names
-            if not is_candidate:
-                if (
-                    id_a_clean in id_b_clean
-                    or id_b_clean in id_a_clean
-                    or (name_a and name_b and (name_a in name_b or name_b in name_a))
-                ):
-                    is_candidate = True
+        # Check 3: Token Jaccard overlap >= 0.5
+        if not is_candidate and tokens_a and tokens_b:
+            intersect = len(tokens_a & tokens_b)
+            union = len(tokens_a | tokens_b)
+            if union > 0 and (intersect / union) >= 0.5:
+                is_candidate = True
 
-            # Check 3: Token Jaccard overlap >= 0.5
-            if not is_candidate and tokens_a and tokens_b:
-                intersect = len(tokens_a & tokens_b)
-                union = len(tokens_a | tokens_b)
-                if union > 0 and (intersect / union) >= 0.5:
-                    is_candidate = True
-
-            if is_candidate:
-                pair = tuple(sorted([id_a, id_b]))
-                candidates.add(pair)
+        if is_candidate:
+            candidates.add(tuple(sorted([id_a, id_b])))
 
     return sorted(list(candidates))
 
