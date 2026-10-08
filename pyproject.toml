@@ -25,6 +25,7 @@ dependencies = [
     "typesafe-sdk>=0.7.0",
     "typesafe-ai>=0.1.0",
     "langchain-typesafe>=0.0.1a3",
+    "headroom-ai>=0.5.2",
 ]
 
 [dependency-groups]

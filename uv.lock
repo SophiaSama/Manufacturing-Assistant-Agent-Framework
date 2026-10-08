@@ -496,6 +496,22 @@ wheels = [
 ]
 
 [[package]]
+name = "headroom-ai"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "litellm" },
+    { name = "pydantic" },
+    { name = "rich" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/f0/eb498a7d5109384badf254cfb9f99b52a9aba02d107cb2cbd304f8ef82d8/headroom_ai-0.5.2.tar.gz", hash = "sha256:1c16360402275759ccc24a62c93a4bbfbd2e0a8e2c39b3dbf68be8e21dfb5e7a", size = 1245410, upload-time = "2026-03-20T21:06:30.823Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b9/c8/3044d2ad04efbac3246da46d51cc72bce1f701f8aa423f71694b38902ca7/headroom_ai-0.5.2-py3-none-any.whl", hash = "sha256:b8f25d24143178885a38ab2c216103f683a67147474163f683753ba373f4e9e3", size = 936203, upload-time = "2026-03-20T21:06:28.967Z" },
+]
+
+[[package]]
 name = "hf-xet"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1130,6 +1146,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },
+    { name = "headroom-ai" },
     { name = "langchain" },
     { name = "langchain-chroma" },
     { name = "langchain-community" },
@@ -1163,6 +1180,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "chromadb", specifier = "==0.5.20" },
+    { name = "headroom-ai", specifier = ">=0.5.2" },
     { name = "langchain", specifier = "==0.3.7" },
     { name = "langchain-chroma", specifier = "==0.1.4" },
     { name = "langchain-community", specifier = "==0.3.7" },
