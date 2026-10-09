@@ -97,3 +97,84 @@ def test_full_graph_quality_suite(sample_graph, tmp_path):
     assert "status" in res
     assert "targets" in res
     assert (tmp_path / "graph_quality_metrics.json").exists()
+
+
+def test_substring_match_is_not_a_hit():
+    G = nx.Graph()
+    G.add_node("tq-6012-extra", type="Machine", name="Other")
+    gold = [{"id": "tq-6012", "type": "Machine", "name": "TorqMaster TQ-6012"}]
+    res = evaluate_entity_extraction(G, gold)
+    assert res["true_positives"] == 0
+
+
+def test_alias_match_is_a_hit():
+    G = nx.Graph()
+    G.add_node("tq-6012", type="Machine", name="x", aliases=["TQ6012"])
+    res = evaluate_entity_extraction(G, [{"id": "tq6012", "type": "Machine", "name": "y"}])
+    assert res["true_positives"] == 1
+
+
+def test_precision_is_not_always_one():
+    G = nx.Graph()
+    G.add_node("tq-6012", type="Machine", name="TQ-6012")
+    G.add_node("junk-1", type="Machine", name="junk")
+    res = evaluate_entity_extraction(G, [{"id": "tq-6012", "type": "Machine", "name": "TQ-6012"}])
+    assert res["precision"] == 0.5
+
+
+def test_unmerged_alias_node_fails_alignment():
+    G = nx.Graph()
+    G.add_node("tq-6012", type="Machine", name="TQ-6012")
+    G.add_node("tq6012", type="Machine", name="TQ6012")
+    res = evaluate_entity_alignment(G, [{"canonical_id": "tq-6012", "aliases": ["TQ6012"]}])
+    assert res["alignment_success_rate"] == 0.0
+
+
+def test_unconnected_facts_not_covered():
+    G = nx.Graph()
+    G.add_node("a", type="Machine")
+    G.add_node("b", type="Threshold")
+    facts = [{"id": "F", "subject": "a", "object": "b"}]
+    res = evaluate_knowledge_coverage(G, facts)
+    assert res["covered_facts"] == 0
+    G.add_edge("a", "b", relation="monitors")
+    assert evaluate_knowledge_coverage(G, facts)["covered_facts"] == 1
+
+
+def test_relation_recall_requires_type_and_direction():
+    G = nx.MultiDiGraph()
+    G.add_node("sop-1", type="SOP")
+    G.add_node("m-1", type="Machine")
+    G.add_edge("sop-1", "m-1", key="requires", relation="requires")
+    ok = evaluate_relation_extraction(G, [{"source": "sop-1", "relation": "requires", "target": "m-1"}])
+    assert ok["gold_relation_recall"] == 1.0
+    wrong_rel = evaluate_relation_extraction(G, [{"source": "sop-1", "relation": "monitors", "target": "m-1"}])
+    assert wrong_rel["gold_relation_recall"] == 0.0
+    reversed_dir = evaluate_relation_extraction(G, [{"source": "m-1", "relation": "requires", "target": "sop-1"}])
+    assert reversed_dir["gold_relation_recall"] == 0.0
+
+
+def test_unknown_relation_and_missing_type_are_invalid():
+    G = nx.DiGraph()
+    G.add_node("a", type="SOP")
+    G.add_node("b", type="Machine")
+    G.add_node("c")
+    G.add_edge("a", "b", relation="bogus")
+    G.add_edge("a", "c", relation="requires")
+    res = evaluate_relation_extraction(G, [])
+    assert res["valid_edges"] == 0
+    assert res["type_missing_count"] == 1
+
+
+def test_graph_health_metrics():
+    from nga.evaluation.graph_eval import evaluate_graph_health
+
+    G = nx.Graph()
+    G.add_node("a", name="Same")
+    G.add_node("b", name="Same")
+    G.add_node("c", name="Iso")
+    G.add_edge("a", "b", relation="requires")
+    h = evaluate_graph_health(G)
+    assert h["isolated_node_ratio"] == round(1 / 3, 4)
+    assert h["duplicate_name_clusters"] == 1
+    assert h["edges_without_provenance"] == 1

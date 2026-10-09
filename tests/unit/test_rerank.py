@@ -92,7 +92,7 @@ def test_rerank_with_mocked_jev(monkeypatch):
         assert call_kwargs["state"]["query"] == "wheel torque"
         assert "candidates" in call_kwargs["state"]
         assert "best_match" in call_kwargs["questions"]
-        assert call_kwargs["model"] == "jev-1.12"
+        assert call_kwargs["model"] == "jev-latest"
 
         assert len(reranked) == 2
         # Best match (highest probability) should be first

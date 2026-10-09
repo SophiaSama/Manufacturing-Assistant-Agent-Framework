@@ -44,3 +44,6 @@ tests/labs/
 # SDK
 node_modules/
 .env.local
+AGENTS.md
+.agents/plugins/headroom/mcp_config.json
+.agents/plugins/headroom/plugin.json

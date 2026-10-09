@@ -27,3 +27,7 @@ class AgentState(TypedDict):
     contradiction_resolution: dict[str, Any] | None
     input_guard: dict[str, Any] | None
     thread_id: str | None
+    # Headroom context tracking
+    episodic_memories: list[dict[str, Any]]
+    headroom_compression_stats: dict[str, Any] | None
+

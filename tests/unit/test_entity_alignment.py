@@ -41,9 +41,9 @@ def sample_graph_with_duplicates():
 
 def test_env_resolution_defaults(monkeypatch):
     """Test dynamic model and API key environment variable resolution."""
-    # Test model defaults back to jev-1.12 if unset
+    # Test model defaults back to jev-latest if unset
     monkeypatch.delenv("TYPESAFE_MODEL", raising=False)
-    assert get_typesafe_model() == "jev-1.12"
+    assert get_typesafe_model() == "jev-latest"
 
     # Test model override via env var
     monkeypatch.setenv("TYPESAFE_MODEL", "jev-custom-test")
@@ -185,3 +185,50 @@ def test_align_entities_full_workflow(sample_graph_with_duplicates, monkeypatch,
     assert report["candidates_found"] > 0
     assert report["merged_count"] > 0
     assert sample_graph_with_duplicates.number_of_nodes() < 7
+
+
+def test_deterministic_merge_pairs(sample_graph_with_duplicates):
+    from nga.ingestion.entity_alignment import deterministic_merge_pairs
+
+    pairs = {tuple(sorted(p)) for p in deterministic_merge_pairs(sample_graph_with_duplicates)}
+    assert ("machine-rb-07", "rb-07") in pairs
+    assert ("fap-401", "procedure-fap-401") in pairs
+    assert not any("tq-6012" in p for p in pairs)
+
+
+def test_merge_entities_multidigraph_rewires_and_keeps_parallel_edges():
+    G = nx.MultiDiGraph()
+    G.add_node("a", type="Machine", name="A")
+    G.add_node("machine-a", type="Machine", name="A")
+    G.add_node("b", type="SOP", name="B")
+    G.add_node("c", type="SOP", name="C")
+    G.add_edge("machine-a", "b", key="monitors", relation="monitors", sources=[{"document": "d1"}])
+    G.add_edge("machine-a", "b", key="requires", relation="requires")
+    G.add_edge("c", "machine-a", key="documented_in", relation="documented_in")
+    assert merge_entities(G, [("a", "machine-a")]) == 1
+    assert "machine-a" not in G
+    assert G.has_edge("a", "b", key="monitors")
+    assert G.has_edge("a", "b", key="requires")
+    assert G.has_edge("c", "a", key="documented_in")
+
+
+def test_cross_type_merge_is_sent_to_review(monkeypatch, tmp_path):
+    monkeypatch.setenv("TYPESAFE_API_TEST", "k")
+    G = nx.Graph()
+    G.add_node("rb-07", type="Machine", name="RB-07 robot")
+    G.add_node("rb-07-part", type="Part", name="RB-07 robot")
+    client = MagicMock()
+    resp = MagicMock()
+    resp.usage.input_tokens = 1
+    resp.usage.output_tokens = 1
+    resp.answers = {
+        "link_state": MagicMock(score=1.9, probabilities=[0, 0, 1], confidence=0.9),
+        "same_name": MagicMock(noul=0.9),
+        "same_type": MagicMock(noul=0.9),
+        "same_description": MagicMock(noul=0.9),
+    }
+    client.system_one.return_value = resp
+    report = align_entities(G, client=client, review_queue_path=str(tmp_path / "q.json"))
+    assert report["merged_count"] == 0
+    assert report["review_count"] == 1
+    assert G.number_of_nodes() == 2

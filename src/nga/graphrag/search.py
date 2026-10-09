@@ -5,6 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 
+def _neighbors(graph: Any, node_id: Any) -> set[Any]:
+    """Neighbors regardless of edge direction (DiGraph.neighbors is successors-only)."""
+    if graph.is_directed():
+        return set(graph.successors(node_id)) | set(graph.predecessors(node_id))
+    return set(graph.neighbors(node_id))
+
+
 def build_graph_evidence(
     graph: Any,
     query: str,
@@ -65,7 +72,7 @@ def build_graph_evidence(
             if node_id in visited:
                 continue
             visited.add(node_id)
-            for neighbor in graph.neighbors(node_id):
+            for neighbor in _neighbors(graph, node_id):
                 n_data = graph.nodes[neighbor]
                 if n_data.get("level_rank", 1) <= user_level and neighbor not in visited:
                     next_frontier.append(neighbor)

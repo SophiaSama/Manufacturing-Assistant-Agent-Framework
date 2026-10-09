@@ -90,6 +90,14 @@ class Settings:
     cache_ttl_retr_s: float
     cache_ttl_sql_s: float
     cache_max_entries: int
+    # Headroom context optimization & memory
+    headroom_enabled: bool
+    headroom_compression_enabled: bool
+    headroom_memory_enabled: bool
+    headroom_compression_ratio: float
+    headroom_min_tokens_to_compress: int
+    headroom_memory_top_k: int
+    headroom_memory_db_path: str
 
     @property
     def provider(self) -> str:
@@ -208,4 +216,24 @@ class Settings:
             cache_ttl_retr_s=float(os.getenv("CACHE_TTL_RETR_S", "3600")),
             cache_ttl_sql_s=float(os.getenv("CACHE_TTL_SQL_S", "300")),
             cache_max_entries=int(os.getenv("CACHE_MAX_ENTRIES", "100000")),
+            headroom_enabled=os.getenv("HEADROOM_ENABLED", "true").lower()
+            in ("1", "true", "yes"),
+            headroom_compression_enabled=os.getenv(
+                "HEADROOM_COMPRESSION_ENABLED", "true"
+            ).lower()
+            in ("1", "true", "yes"),
+            headroom_memory_enabled=os.getenv(
+                "HEADROOM_MEMORY_ENABLED", "true"
+            ).lower()
+            in ("1", "true", "yes"),
+            headroom_compression_ratio=float(
+                os.getenv("HEADROOM_COMPRESSION_RATIO", "0.7")
+            ),
+            headroom_min_tokens_to_compress=int(
+                os.getenv("HEADROOM_MIN_TOKENS_TO_COMPRESS", "250")
+            ),
+            headroom_memory_top_k=int(os.getenv("HEADROOM_MEMORY_TOP_K", "3")),
+            headroom_memory_db_path=os.getenv(
+                "HEADROOM_MEMORY_DB_PATH", "data/headroom_memory.db"
+            ),
         )

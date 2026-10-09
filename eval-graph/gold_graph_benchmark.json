@@ -153,5 +153,16 @@
       "object": "qcr-501",
       "source_doc": "QCR-501"
     }
-  ]
+  ],
+  "gold_negative_entities": [
+    {"id": "aurora", "reason": "alias of aurora-au-2025; must not be a separate node"},
+    {"id": "au25", "reason": "alias of aurora-au-2025"},
+    {"id": "solstice", "reason": "alias of solstice-so-2025"},
+    {"id": "so25", "reason": "alias of solstice-so-2025"},
+    {"id": "tf-6000", "reason": "alias of tq-6018"},
+    {"id": "tq6012", "reason": "alias of tq-6012"},
+    {"id": "machine-tq-6012", "reason": "prefixed duplicate of tq-6012"},
+    {"id": "procedure-fap-401", "reason": "prefixed duplicate of fap-401"}
+  ],
+  "gold_negative_relations": []
 }

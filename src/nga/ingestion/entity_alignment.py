@@ -56,8 +56,8 @@ def get_typesafe_api_key() -> str | None:
 
 
 def get_typesafe_model() -> str:
-    """Resolve TypeSafe model, defaulting back to jev-1.12 if not set."""
-    return os.environ.get("TYPESAFE_MODEL", "jev-1.12")
+    """Resolve TypeSafe model, defaulting back to jev-latest if not set."""
+    return os.environ.get("TYPESAFE_MODEL", "jev-latest")
 
 
 def create_typesafe_client(api_key: str | None = None) -> TypeSafeClient:
@@ -89,69 +89,118 @@ def _extract_codes(text: str) -> set[str]:
     return {m.replace("_", "-") for m in matches}
 
 
+def _are_types_compatible(type_a: str, type_b: str) -> bool:
+    if not type_a or not type_b or type_a == type_b:
+        return True
+    compat = {
+        frozenset(["machine", "part"]),
+        frozenset(["fault", "faultcode"]),
+        frozenset(["procedure", "sop"]),
+    }
+    return frozenset([type_a, type_b]) in compat
+
+
 def generate_candidate_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
-    """Generate candidate duplicate pairs using a fast blocking pass.
+    """Generate candidate duplicate pairs using a fast indexed blocking pass.
 
     Pairs are filtered by:
-    1. Matching or compatible entity types
-    2. Substring overlap, common technical code/number, or token similarity
+    1. Matching or compatible entity types (via type family bucketing)
+    2. Shared technical codes, substring inclusion, or token Jaccard similarity >= 0.5
     """
     candidates: set[tuple[str, str]] = set()
-    nodes = list(graph.nodes(data=True))
 
-    for i in range(len(nodes)):
-        id_a, data_a = nodes[i]
-        type_a = str(data_a.get("type", "")).lower()
-        name_a = str(data_a.get("name", "")).lower()
-        id_a_clean = id_a.lower().replace("_", "-")
-        tokens_a = _tokenize(name_a) | _tokenize(id_a_clean)
-        codes_a = _extract_codes(id_a_clean) | _extract_codes(name_a)
+    # Per-node features are computed once.
+    features = []
+    for node_id, data in graph.nodes(data=True):
+        node_name = str(data.get("name", "")).lower()
+        clean = str(node_id).lower().replace("_", "-")
+        features.append((
+            node_id,
+            str(data.get("type", "")).lower(),
+            node_name,
+            clean,
+            _tokenize(node_name) | _tokenize(clean),
+            _extract_codes(clean) | _extract_codes(node_name),
+        ))
 
-        for j in range(i + 1, len(nodes)):
-            id_b, data_b = nodes[j]
-            type_b = str(data_b.get("type", "")).lower()
-            name_b = str(data_b.get("name", "")).lower()
-            id_b_clean = id_b.lower().replace("_", "-")
-            tokens_b = _tokenize(name_b) | _tokenize(id_b_clean)
-            codes_b = _extract_codes(id_b_clean) | _extract_codes(name_b)
+    # Fast inverted index for technical codes
+    code_to_idx: dict[str, list[int]] = {}
+    for idx, (_, _, _, _, _, codes) in enumerate(features):
+        for c in codes:
+            code_to_idx.setdefault(c, []).append(idx)
 
-            # Must have compatible types unless types are generic/missing
-            if type_a and type_b and type_a != type_b:
-                # Allow Machine/Part overlap, Fault/FaultCode overlap, Procedure/SOP overlap
-                compat = {
-                    frozenset(["machine", "part"]),
-                    frozenset(["fault", "faultcode"]),
-                    frozenset(["procedure", "sop"]),
-                }
-                if frozenset([type_a, type_b]) not in compat:
-                    continue
+    # Bucketing by type family to prune ~90% of cross-type comparisons
+    type_families: dict[str, str] = {
+        "machine": "machinery",
+        "part": "machinery",
+        "fault": "issues",
+        "faultcode": "issues",
+        "procedure": "docs",
+        "sop": "docs",
+    }
 
-            is_candidate = False
+    family_buckets: dict[str, list[int]] = {}
+    generic_indices: list[int] = []
 
-            # Check 1: Shared technical code (e.g. "e-4012", "rb-07", "tq-6012")
-            if codes_a and codes_b:
-                if codes_a & codes_b:
-                    is_candidate = True
+    for idx, (_, ntype, _, _, _, _) in enumerate(features):
+        fam = type_families.get(ntype, ntype)
+        if not ntype or fam == "":
+            generic_indices.append(idx)
+        else:
+            family_buckets.setdefault(fam, []).append(idx)
 
-            # Check 2: Substring inclusion in IDs or names
-            if not is_candidate:
-                if (
-                    id_a_clean in id_b_clean
-                    or id_b_clean in id_a_clean
-                    or (name_a and name_b and (name_a in name_b or name_b in name_a))
-                ):
-                    is_candidate = True
+    # Candidate pair index combinations to evaluate
+    pair_indices: set[tuple[int, int]] = set()
 
-            # Check 3: Token Jaccard overlap >= 0.5
-            if not is_candidate and tokens_a and tokens_b:
-                intersect = len(tokens_a & tokens_b)
-                union = len(tokens_a | tokens_b)
-                if union > 0 and (intersect / union) >= 0.5:
-                    is_candidate = True
+    # 1. Pairs sharing a technical code (can cross families if compatible)
+    for idxs in code_to_idx.values():
+        for i in range(len(idxs)):
+            for j in range(i + 1, len(idxs)):
+                pair_indices.add((min(idxs[i], idxs[j]), max(idxs[i], idxs[j])))
 
-            if is_candidate:
-                pair = tuple(sorted([id_a, id_b]))
-                candidates.add(pair)
+    # 2. Pairs within each family bucket
+    for idxs in family_buckets.values():
+        for i in range(len(idxs)):
+            for j in range(i + 1, len(idxs)):
+                pair_indices.add((min(idxs[i], idxs[j]), max(idxs[i], idxs[j])))
+
+    # 3. Generic/untyped nodes checked against all
+    for g_idx in generic_indices:
+        for other_idx in range(len(features)):
+            if g_idx != other_idx:
+                pair_indices.add((min(g_idx, other_idx), max(g_idx, other_idx)))
+
+    for i, j in pair_indices:
+        id_a, type_a, name_a, id_a_clean, tokens_a, codes_a = features[i]
+        id_b, type_b, name_b, id_b_clean, tokens_b, codes_b = features[j]
+
+        if not _are_types_compatible(type_a, type_b):
+            continue
+
+        is_candidate = False
+
+        # Check 1: Shared technical code (e.g. "e-4012", "rb-07", "tq-6012")
+        if codes_a and codes_b and (codes_a & codes_b):
+            is_candidate = True
+
+        # Check 2: Substring inclusion in IDs or names
+        if not is_candidate:
+            if (
+                id_a_clean in id_b_clean
+                or id_b_clean in id_a_clean
+                or (name_a and name_b and (name_a in name_b or name_b in name_a))
+            ):
+                is_candidate = True
+
+        # Check 3: Token Jaccard overlap >= 0.5
+        if not is_candidate and tokens_a and tokens_b:
+            intersect = len(tokens_a & tokens_b)
+            union = len(tokens_a | tokens_b)
+            if union > 0 and (intersect / union) >= 0.5:
+                is_candidate = True
+
+        if is_candidate:
+            candidates.add(tuple(sorted([id_a, id_b])))
 
     return sorted(list(candidates))
 
@@ -191,6 +240,79 @@ def route(score_value: float) -> str:
     """The decision rule: round nearest level to outcome name."""
     level_index = min(int(score_value + 0.5), len(LEVELS) - 1)
     return OUTCOME[max(0, level_index)]
+
+
+_REDUNDANT_PREFIXES = ("machine-", "procedure-", "personnel-", "nc-record-", "part-")
+
+
+def _strip_prefix(nid: str) -> str:
+    for p in _REDUNDANT_PREFIXES:
+        if nid.startswith(p):
+            return nid[len(p):]
+    return nid
+
+
+def deterministic_merge_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
+    """Pairs that are certain duplicates, so no LLM call is needed.
+
+    Two nodes of the *same non-empty type* are duplicates when their canonical
+    IDs match after removing redundant type prefixes, or when their canonical
+    names are identical.
+    """
+    from nga.ingestion.normalize import canonical_id
+
+    groups: dict[tuple[str, str], list[str]] = {}
+    for nid, data in graph.nodes(data=True):
+        ntype = str(data.get("type", "")).lower()
+        if not ntype:
+            continue
+        groups.setdefault((ntype, _strip_prefix(canonical_id(nid))), []).append(nid)
+        name_key = canonical_id(data.get("name", ""))
+        if name_key:
+            groups.setdefault((ntype, name_key), []).append(nid)
+
+    pairs: set[tuple[str, str]] = set()
+    for members in groups.values():
+        unique = sorted(set(members))
+        for other in unique[1:]:
+            pairs.add((unique[0], other))
+    return sorted(pairs)
+
+
+def _rewire_edges(graph: nx.Graph, dup: str, canonical: str) -> None:
+    """Move every edge of ``dup`` onto ``canonical`` (direction/multigraph aware)."""
+    directed = graph.is_directed()
+    multi = graph.is_multigraph()
+
+    if multi:
+        if directed:
+            edges = [(u, v, k, d) for u, v, k, d in graph.out_edges(dup, keys=True, data=True)]
+            edges += [(u, v, k, d) for u, v, k, d in graph.in_edges(dup, keys=True, data=True)]
+        else:
+            edges = [(u, v, k, d) for u, v, k, d in graph.edges(dup, keys=True, data=True)]
+    else:
+        if directed:
+            edges = [(u, v, None, d) for u, v, d in graph.out_edges(dup, data=True)]
+            edges += [(u, v, None, d) for u, v, d in graph.in_edges(dup, data=True)]
+        else:
+            edges = [(u, v, None, d) for u, v, d in graph.edges(dup, data=True)]
+
+    for u, v, key, data in edges:
+        nu = canonical if u == dup else u
+        nv = canonical if v == dup else v
+        if nu == nv:
+            continue  # would become a self-loop
+        data = dict(data)
+        if multi:
+            if graph.has_edge(nu, nv, key=key):
+                existing = graph.edges[nu, nv, key]
+                for s in data.get("sources", []):
+                    if s not in existing.setdefault("sources", []):
+                        existing["sources"].append(s)
+            else:
+                graph.add_edge(nu, nv, key=key, **data)
+        elif not graph.has_edge(nu, nv):
+            graph.add_edge(nu, nv, **data)
 
 
 def merge_entities(graph: nx.Graph, merge_pairs: list[tuple[str, str]]) -> int:
@@ -270,10 +392,17 @@ def merge_entities(graph: nx.Graph, merge_pairs: list[tuple[str, str]]) -> int:
 
             max_level_rank = max(max_level_rank, d_data.get("level_rank", 1))
 
+            # Preserve provenance and confidence from the duplicate
+            if d_data.get("sources"):
+                c_sources = c_data.setdefault("sources", [])
+                for s in d_data["sources"]:
+                    if s not in c_sources:
+                        c_sources.append(s)
+            if "confidence" in d_data:
+                c_data["confidence"] = max(c_data.get("confidence", 0.0), d_data["confidence"])
+
             # Rewire all edges from duplicate to canonical
-            for neighbor, edge_data in list(graph[dup].items()):
-                if neighbor != canonical and not graph.has_edge(canonical, neighbor):
-                    graph.add_edge(canonical, neighbor, **edge_data)
+            _rewire_edges(graph, dup, canonical)
 
             graph.remove_node(dup)
             merged_count += 1
@@ -323,35 +452,45 @@ def align_entities(
         client = create_typesafe_client(api_key=api_key)
 
     model_name = model or get_typesafe_model()
-    candidates = generate_candidate_pairs(graph)
+
+    # Deterministic pre-pass: certain duplicates need no LLM call.
+    certain_pairs = deterministic_merge_pairs(graph)
+    certain_set = {tuple(sorted(p)) for p in certain_pairs}
+    candidates = [p for p in generate_candidate_pairs(graph) if tuple(sorted(p)) not in certain_set]
     logger.info(
-        "Candidate generation complete: %d candidate pairs identified.",
+        "Candidate generation complete: %d deterministic merges, %d pairs to score.",
+        len(certain_pairs),
         len(candidates),
     )
-
-    if not candidates:
-        return {
-            "status": "completed",
-            "candidates_found": 0,
-            "merged_count": 0,
-            "review_count": 0,
-        }
 
     def process_pair(pair: tuple[str, str]) -> tuple[tuple[str, str], dict[str, Any], str]:
         u, v = pair
         data_a = dict(graph.nodes[u])
         data_b = dict(graph.nodes[v])
+        for d in (data_a, data_b):
+            d.pop("sources", None)  # provenance is noise for the matcher
+            d.pop("descriptions", None)
         data_a["id"] = u
         data_b["id"] = v
         res = score_pair(client, data_a, data_b, model=model_name)
         decision = route(res["score"])
+        if decision == "merge":
+            type_a = str(data_a.get("type", "")).lower()
+            type_b = str(data_b.get("type", "")).lower()
+            same_type_prob = res["properties"].get("same_type")
+            # Never auto-merge across types or when the matcher says the types differ.
+            if (type_a and type_b and type_a != type_b) or (
+                isinstance(same_type_prob, (int, float)) and same_type_prob < 0.5
+            ):
+                decision = "review"
         return pair, res, decision
 
     scored_results: list[tuple[tuple[str, str], dict[str, Any], str]] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        scored_results = list(executor.map(process_pair, candidates))
+    if candidates:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            scored_results = list(executor.map(process_pair, candidates))
 
-    to_merge: list[tuple[str, str]] = []
+    to_merge: list[tuple[str, str]] = list(certain_pairs)
     review_queue: list[dict[str, Any]] = []
     leave_separate: list[tuple[str, str]] = []
 
@@ -392,7 +531,8 @@ def align_entities(
     return {
         "status": "completed",
         "model": model_name,
-        "candidates_found": len(candidates),
+        "candidates_found": len(candidates) + len(certain_pairs),
+        "deterministic_merges": len(certain_pairs),
         "merged_count": merged_count,
         "review_count": len(review_queue),
         "separate_count": len(leave_separate),

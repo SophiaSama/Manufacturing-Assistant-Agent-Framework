@@ -15,7 +15,7 @@ from typesafe_sdk import Choice, TypeSafeClient
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RERANK_MODEL = "jev-1.12"
+DEFAULT_RERANK_MODEL = "jev-latest"
 DEFAULT_TOP_N = 5
 
 

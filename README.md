@@ -10,9 +10,9 @@ The **Enterprise Agentic Decision Support Framework** is an extensible, producti
 
 The repository contains:
 1. **Generic Enterprise Agent Engine (`src/enterprise_agent/`)**: Domain-agnostic orchestration, multi-format document ingestion (Markdown, JSON, CSV, TXT), AST-validated read-only text-to-SQL execution via SQLGlot, System One semantic reranking via TypeSafe AI Jev (`Choice` primitive), and policy-driven Human-in-the-Loop (HITL) gates.
-2. **Flagship Domain: NGA Manufacturing Assistant (`src/nga/`)**: A specialized automotive manufacturing assistant tailored for the synthetic **Apex Automotive — Northgate Assembly Plant (NGA)**, enforcing 4-tier Role-Based Access Control (RBAC), safety-critical Class A defect containment, recall triggers (QCR-501), and dual-path hybrid retrieval (ChromaDB vector search + NetworkX GraphRAG).
+2. **Flagship Domain: NGA Manufacturing Assistant (`src/nga/`)**: A specialized automotive manufacturing assistant tailored for the synthetic **Apex Automotive — Northgate Assembly Plant (NGA)**, enforcing 4-tier Role-Based Access Control (RBAC), safety-critical Class A defect containment, recall triggers (QCR-501), dual-path hybrid retrieval (ChromaDB vector search + NetworkX GraphRAG), and **Headroom context compression with episodic semantic memory**.
 3. **Banking Domain Pack (`domains/banking/`)**: A financial crime and AML/sanctions compliance decision support pack demonstrating domain portability across banking policies, SAR filings, and OFAC watchlists.
-4. **Deterministic Evaluation & Grounding Suite**: 4-tier stepped benchmark suites (85 questions), quantitative Graph Quality metrics, A/B release gates, multi-model Pareto arena, citation existence & retrieval provenance verification, and **TypeSafe AI Jev** calibrated System One scoring.
+4. **Deterministic Evaluation & Grounding Suite**: 4-tier stepped benchmark suites (85 questions), quantitative Graph Quality metrics, A/B release gates, multi-model Pareto arena, citation existence & retrieval provenance verification, **TypeSafe AI Jev** calibrated System One scoring, and **Headroom multi-hop long reasoning chain benchmarks**.
 
 ---
 
@@ -24,6 +24,7 @@ The repository contains:
 | **Vector DB** | **ChromaDB** | Lightweight, persistent vector store supporting exact metadata filtering. Enforces path-derived RBAC constraints (`level_rank <= user_level`) directly during similarity search. |
 | **Knowledge Graph** | **NetworkX** | Python-native graph library persisting extracted manufacturing entities and relations (e.g., `Machine`, `FaultCode`, `RecallCriteria`) for GraphRAG multi-hop BFS reasoning. |
 | **System One Reranker** | **TypeSafe AI Jev** (`typesafe-ai/jev`) | Sub-30ms System One `Choice` reranker evaluating candidate passage relevance against query context in a single forward pass, replacing heavy GPU cross-encoders with zero GPU infrastructure. |
+| **Context Compression & Memory** | **Headroom AI** (`headroom-ai`) | Session-isolated context compression for RAG tool outputs and multi-turn message history with deterministic SHA-256 hash markers, 100% byte-for-byte uncompressed evidence recovery, and episodic plant incident memory. |
 | **Security & SQL Engine** | **SQLGlot** | Strict SQL AST parser and validator. Validates generated text-to-SQL commands prior to execution, restricting queries strictly to single, read-only `SELECT` statements matching the live database schema. |
 | **Fast Evaluation Judge** | **TypeSafe AI Jev** | System One non-generative decision model using Reinforcement Learning for Calibrated Decisions (RLCD). Evaluates groundedness and correctness in sub-50ms with zero token generation cost. |
 | **Package Manager** | **uv / hatchling** | Modern, reproducible Python package installer and workspace manager with locked dependencies. |
@@ -42,23 +43,29 @@ graph TD
     Config --> Orchestrator["LangGraph State Machine"]
     
     subgraph Execution Pipeline
-        Orchestrator --> Prep["prepare: Query Normalization & Complexity Route (Jev)"]
-        Prep --> Agt["agent: System Two LLM Reasoning (CoT) + Role System Prompt"]
+        Orchestrator --> Prep["prepare: Normalization, Jev Route & Episodic Memory Recall"]
+        Prep --> Agt["agent: History Compression + System Two Reasoning (CoT)"]
         Agt --> Router{"_route_after_agent: Stop Gate & Circuit Breaker"}
         
         Router -- "Tool Call Requested & Rounds < 8" --> Tools["tools: ToolNode Execution"]
-        Tools -- "SQL Query" --> SQLTool["SQL Engine: SQLGlot AST Validation & Read-Only Execution"]
-        Tools -- "Doc Search" --> HybridRetr["Hybrid Retrieval: Vector Store + GraphRAG"]
+        Tools -- "SQL Query" --> SQLTool["SQL Engine: SQLGlot AST Validation & L2 Cache"]
+        Tools -- "Doc Search" --> HybridRetr["Hybrid Retrieval: Vector Store + GraphRAG + L1 Cache"]
         HybridRetr --> JevRerank["System One Reranker: TypeSafe Jev (Choice)"]
         
-        SQLTool --> Agt
-        JevRerank --> Agt
+        SQLTool --> HeadroomCompress["Headroom Compression: r=0.7 + SHA-256 Hash Marker"]
+        JevRerank --> HeadroomCompress
+        Tools -- "Verbatim Check" --> RetrieveRaw["retrieve_uncompressed_evidence(hash): 100% Exact Recovery"]
         
-        Router -- "Circuit Breaker Tripped (Rounds >= 8 / Repeats >= 3) OR Jev Sufficiency Met OR No Tools" --> Synth["synthesis: Structured FinalAnswer & Class A Hazard Detection"]
+        HeadroomCompress --> Agt
+        RetrieveRaw --> Agt
+        
+        Router -- "Circuit Breaker Tripped OR Jev Sufficiency Met OR No Tools" --> Synth["synthesis: Structured FinalAnswer & Class A Hazard Detection"]
         Synth --> Grounding["grounding: Citation Provenance & Jev Fact Verification"]
         Grounding --> HITL["hitl: Action Verb Interceptor & Governance Queue"]
+        HITL -. "Dual-Write Approved Resolution" .-> EpisodicMem[("Headroom Episodic Memory")]
     end
     
+    EpisodicMem -. "Recall Past Incidents" .-> Prep
     HITL --> Output(["Rendered Answer, Hazard Banners & Audit Trail"])
 ```
 
@@ -103,6 +110,40 @@ To enhance retrieval precision beyond pure dense vector embeddings, the framewor
 
 ---
 
+## 🗜️ Context Compression & Episodic Memory (Headroom Integration)
+
+Industrial manufacturing workflows frequently trigger multi-hop reasoning chains involving verbose database tables (e.g., hundreds of torque records across assembly shifts) and extensive standard operating procedures. Unchecked, raw context rapidly exhausts LLM context windows, inflates latency, and degrades reasoning precision.
+
+The framework integrates **Headroom AI (`headroom-ai`)** using an explicit node-level context optimization pattern (**Approach B**) coupled with episodic semantic memory (`src/nga/compression/` and `src/nga/memory/`):
+
+### 1. Dual-Scope Context Compression
+- **Tool Payload Compression**: When tools (`query_nga_database`, `search_sop_documents`) return outputs exceeding the threshold (`min_tokens=250`), Headroom compresses the textual payload targeting ratio $r=0.7$ (a conservative 30% reduction calibrated to protect technical parameters, part numbers, and error codes).
+- **Multi-Turn History Compression**: Prior to invoking the System Two LLM in `agent_node`, prior conversation turns are compressed with `protect_recent=2`, preserving immediate operational context while eliminating context bloat from earlier turns.
+- **Session-Scoped In-Memory Raw Store**: Uncompressed payloads are cached strictly in-memory per session (`SessionRawContentStore`) with LRU eviction and zero cross-tenant leakage.
+
+### 2. The Verbatim Grounding Guarantee
+In high-precision manufacturing, rounding errors or missed tolerances are unacceptable (e.g., bolt torque tolerances `48.5 Nm ± 1.5 Nm`). The system enforces a **Dual Representation Pattern**:
+- Every compressed payload is tagged with a deterministic hash: `[hash=8f1c3a]`.
+- The agent is equipped with the `retrieve_uncompressed_evidence(evidence_hash)` tool.
+- If the agent evaluates a safety-critical **Class A defect** or requires exact verification before a stop-ship recommendation, it retrieves the original text byte-for-byte from the in-memory store.
+
+### 3. Cache Coexistence & Layer Architecture
+Headroom operates strictly downstream of NGA's multi-tier input/execution cache (`src/nga/cache`):
+- **L0 (Embedding), L1 (Retrieval), and L2 (SQL)** caches in `data/cache.db` prevent redundant searches and expensive database operations.
+- **Headroom** optimizes the prompt payload size passed into the LLM context window.
+- Invalidation of `data/cache.db` does not disrupt session-scoped Headroom hashes, and Headroom respects all RBAC level isolation.
+
+### 4. Episodic Semantic Memory (`NgaEpisodicMemory`)
+- **Past Incident Recall**: During query preparation (`prepare_node`), the agent queries `data/headroom_memory.db` for semantically similar past plant incidents, presenting historical resolutions and root-cause analyses directly in the agent's system prompt.
+- **HITL Dual-Write**: Whenever an operator or plant manager approves a critical recommendation in the Human-in-the-Loop gate, the resolution is dual-written to `NgaEpisodicMemory` alongside the structured audit log in `app_state.db`.
+
+### 5. Multi-Hop Long Reasoning Benchmark Results
+Evaluated on long reasoning chains simulating complex multi-station audits and safety escalations (`tests/benchmarks/test_long_reasoning_benchmark.py`):
+- **LR1 (Station 144 Torque Drift & Recall Trace)**: Raw 6,644 chars $\to$ 1,878 chars (**71.7% token reduction**).
+- **LR2 (Assembly Lines 1 & 2 Breadth Audit)**: Raw 6,600 chars $\to$ 1,878 chars (**71.5% token reduction**).
+- **LR3 (Dual Safety Defect Regulatory Escalation)**: Raw 6,550 chars $\to$ 2,071 chars (**68.4% token reduction**).
+- **Verbatim Recovery**: **100% exact match** on all tolerance specifications via hash retrieval.
+
 ## 🛡️ Human-in-the-Loop (HITL) Safety & Governance
 
 High-consequence operational decisions cannot be executed autonomously. The governance policy gate (`src/enterprise_agent/hitl/policy_gate.py` and `src/nga/hitl/`):
@@ -140,6 +181,14 @@ RERANK_TOP_N=5
 
 # Active Domain Pack
 DOMAIN_PACK=domains/manufacturing/pack.yaml
+
+# Headroom AI (Context Compression & Episodic Semantic Memory)
+HEADROOM_ENABLED=true
+HEADROOM_COMPRESSION_ENABLED=true
+HEADROOM_MEMORY_ENABLED=true
+HEADROOM_COMPRESSION_RATIO=0.7
+HEADROOM_MIN_TOKENS_TO_COMPRESS=250
+HEADROOM_MEMORY_TOP_K=3
 ```
 
 ### 3. Install Dependencies
@@ -258,14 +307,14 @@ The repository organizes tests into four dedicated subdirectories with clear bou
 
 | Directory | Scope | Execution | Dependencies |
 | :--- | :--- | :--- | :--- |
-| **`tests/unit/`** | Fast unit tests: caching, routing, grounding, Jev reasoning, reranker, release gates, report generation. | `uv run pytest tests/unit/ -v` | Offline / fully mocked |
+| **`tests/unit/`** | Fast unit tests: caching, routing, grounding, Jev reasoning, reranker, Headroom compression, episodic memory, release gates. | `uv run pytest tests/unit/ -v` | Offline / fully mocked |
 | **`tests/integration/`** | System & integration tests: Web UI REST APIs, multi-turn stress tests, concurrency, and cross-document contradiction detection. | `uv run pytest tests/integration/ -v` | In-memory / SQLite |
-| **`tests/benchmarks/`** | Stepped evaluation suite & curated benchmark runners against the 85-question synthetic manufacturing corpus. | `uv run pytest tests/benchmarks/ -v` | Corpus / vector store |
+| **`tests/benchmarks/`** | Stepped evaluation suite, curated benchmark runners, and Headroom multi-hop long reasoning chain benchmarks. | `uv run pytest tests/benchmarks/ -v` | Corpus / vector store |
 | **`tests/fixtures/`** | Benchmark ground truth datasets (`ground-truth.md`), seed configurations, and fixture assets. | Referenced by tests | Static |
 
 ```bash
-# Run all unit tests (180+ tests, < 5s)
-uv run pytest tests/unit/ -v
+# Run all unit tests and long reasoning benchmarks (250+ tests, < 6s)
+uv run pytest tests/unit/ tests/benchmarks/test_long_reasoning_benchmark.py -v
 
 # Run integration tests (UI API, concurrency, stress)
 uv run pytest tests/integration/test_ui_api.py tests/integration/test_stress.py -v
@@ -313,13 +362,15 @@ All evaluation outputs and benchmark runs are structured under `reports/` organi
 │   └── nga/                          # NGA Manufacturing Flagship Implementation
 │       ├── cache/                    # L0/L1/L2 multi-tier SQLite caching
 │       ├── cli.py                    # Manufacturing terminal chat loop
+│       ├── compression/              # Headroom context compression & session raw store
 │       ├── config.py                 # NGA configuration & environment bindings
 │       ├── evaluation/               # Grounding auditor, Jev judge, stepped suite, CI tracker
 │       ├── graph/                    # NGA LangGraph nodes & workflow definitions
 │       ├── graphrag/                 # NetworkX knowledge graph & BFS hybrid retrieval
 │       ├── hitl/                     # NGA Human-in-the-Loop decision gate
 │       ├── ingestion/                # Vector store & graph builder pipelines
-│       ├── tools/                    # NGA SQL & document retrieval tools
+│       ├── memory/                   # Episodic semantic memory (Headroom) & checkpointer
+│       ├── tools/                    # NGA SQL, document retrieval & verbatim tools
 │       └── ui/                       # Modern web dashboard (FastAPI backend + web assets)
 ├── tests/                            # Organized 4-tier testing hierarchy
 │   ├── unit/                         # Unit tests (cache, routing, grounding, judge, rerank, etc.)

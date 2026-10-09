@@ -105,3 +105,41 @@ def test_release_gate_rejects_on_tcer_exceeded(passing_baseline_and_candidate):
     assert "token_efficiency_tcer" in res.criteria_results
     assert res.criteria_results["token_efficiency_tcer"]["passed"] is False
     assert any("TCER" in r for r in res.reasons)
+
+
+def test_release_gate_evaluates_graph_quality(passing_baseline_and_candidate):
+    baseline, candidate = passing_baseline_and_candidate
+    candidate["graph_quality"] = {
+        "graph_quality_index": 0.92,
+        "graph_health": {
+            "isolated_node_ratio": 0.08,
+            "provenance_coverage": 0.95,
+        },
+    }
+    res = evaluate_release_gate(baseline, candidate)
+    assert res.status == "APPROVED"
+    assert "graph_quality_index" in res.criteria_results
+    assert res.criteria_results["graph_quality_index"]["passed"] is True
+    assert "graph_isolated_nodes" in res.criteria_results
+    assert res.criteria_results["graph_isolated_nodes"]["passed"] is True
+    assert "graph_provenance_coverage" in res.criteria_results
+    assert res.criteria_results["graph_provenance_coverage"]["passed"] is True
+
+
+def test_release_gate_rejects_on_graph_quality_failure(passing_baseline_and_candidate):
+    baseline, candidate = passing_baseline_and_candidate
+    candidate["graph_quality"] = {
+        "graph_quality_index": 0.44,  # Below 0.80
+        "graph_health": {
+            "isolated_node_ratio": 0.35,  # Above 0.25
+            "provenance_coverage": 0.50,  # Below 0.80
+        },
+    }
+    res = evaluate_release_gate(baseline, candidate)
+    assert res.status == "REJECTED"
+    assert res.criteria_results["graph_quality_index"]["passed"] is False
+    assert res.criteria_results["graph_isolated_nodes"]["passed"] is False
+    assert res.criteria_results["graph_provenance_coverage"]["passed"] is False
+    assert any("Graph Quality Index" in r for r in res.reasons)
+    assert any("isolated node ratio" in r for r in res.reasons)
+    assert any("provenance coverage" in r for r in res.reasons)
