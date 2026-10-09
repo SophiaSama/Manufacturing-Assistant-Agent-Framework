@@ -164,10 +164,10 @@ def test_eval_questions_loading():
     assert all(q["category"] == "retrieval" for q in retrieval_q)
 
     smoke_q = load_eval_questions(smoke_test=True)
-    assert len(smoke_q) == 5
+    assert len(smoke_q) == 6
     # Distinct categories in smoke test
     categories = {q["category"] for q in smoke_q}
-    assert len(categories) == 5
+    assert len(categories) == 6
 
 
 def test_eval_compare_logic():

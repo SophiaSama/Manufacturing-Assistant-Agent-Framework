@@ -52,8 +52,8 @@ def load_eval_questions(
             if cat not in seen_cats:
                 smoke_questions.append(q)
                 seen_cats.add(cat)
-            if len(smoke_questions) >= 5:
-                break
+        if limit and limit > 0:
+            return smoke_questions[:limit]
         return smoke_questions
 
     if limit and limit > 0:

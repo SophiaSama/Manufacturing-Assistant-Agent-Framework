@@ -120,7 +120,7 @@ class HILActionRequest(BaseModel):
 class EvalRunRequest(BaseModel):
     category: str = Field("all", description="Category or 'all'")
     limit: int | None = Field(None, description="Limit question count")
-    smoke_test: bool = Field(False, description="Run quick 5-question smoke test across categories")
+    smoke_test: bool = Field(False, description="Run quick 6-question smoke test across categories")
     run_label: str | None = Field(None, description="Custom run label")
     role: str = Field("manager", description="Role for evaluation execution")
     cache_mode: str = Field("cold", description="'cold' (default) or 'hot' (eval cache enabled)")
