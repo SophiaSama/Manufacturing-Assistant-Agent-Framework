@@ -107,18 +107,25 @@ class HeadroomManager:
         content_hash = self.store.put(session_id, text)
 
         try:
-            from headroom import CompressConfig, compress
+            import headroom
+
+            CompressConfig = getattr(headroom, "CompressConfig", None)
+            compress = headroom.compress
 
             messages = [{"role": "tool", "content": text, "name": tool_name}]
-            config = CompressConfig(
-                compress_user_messages=True,
-                compress_system_messages=False,
-                protect_recent=0,
-                target_ratio=self.target_ratio,
-                min_tokens_to_compress=self.min_tokens,
-                protect_analysis_context=True,
-            )
-            result = compress(messages, config=config)
+            if CompressConfig is not None:
+                config = CompressConfig(
+                    compress_user_messages=True,
+                    compress_system_messages=False,
+                    protect_recent=0,
+                    target_ratio=self.target_ratio,
+                    min_tokens_to_compress=self.min_tokens,
+                    protect_analysis_context=True,
+                )
+                result = compress(messages, config=config)
+            else:
+                result = compress(messages)
+
             compressed_content = result.messages[0]["content"]
 
             header = (
@@ -159,17 +166,23 @@ class HeadroomManager:
             dict_payload.append({"role": role, "content": content})
 
         try:
-            from headroom import CompressConfig, compress
+            import headroom
 
-            config = CompressConfig(
-                compress_user_messages=False,
-                compress_system_messages=False,
-                protect_recent=0,
-                target_ratio=self.target_ratio,
-                min_tokens_to_compress=self.min_tokens,
-                protect_analysis_context=True,
-            )
-            res = compress(dict_payload, config=config)
+            CompressConfig = getattr(headroom, "CompressConfig", None)
+            compress = headroom.compress
+
+            if CompressConfig is not None:
+                config = CompressConfig(
+                    compress_user_messages=False,
+                    compress_system_messages=False,
+                    protect_recent=0,
+                    target_ratio=self.target_ratio,
+                    min_tokens_to_compress=self.min_tokens,
+                    protect_analysis_context=True,
+                )
+                res = compress(dict_payload, config=config)
+            else:
+                res = compress(dict_payload)
 
             rebuilt: list[BaseMessage] = []
             for original, compressed in zip(to_compress, res.messages):
