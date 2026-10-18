@@ -149,7 +149,7 @@ class JevEvaluationResult:
     failure_mode: str
     failure_mode_probabilities: dict[str, float]
     latency_ms: float
-    model: str = "jev"
+    model: str = "jev-1.13.0"
     gated_reason: str | None = None
 
     def __getitem__(self, item: str) -> Any:
@@ -204,7 +204,7 @@ def make_jev_judge(
                 raise JevJudgeAPIError(err_msg, status_code=401)
         from typesafe_sdk import TypeSafeClient
 
-        client = TypeSafeClient()
+        client = TypeSafeClient(model=os.getenv("RERANK_MODEL", "jev-1.13.0"))
 
     def judge(candidate: str, golden: str) -> JevScore:
         try:
@@ -230,7 +230,7 @@ def make_jev_judge(
             logger.warning("Jev judge evaluation failed: %s", e)
             return JevScore(0, diagnostics=None)
 
-    judge.model_name = os.getenv("RERANK_MODEL", "jev-latest")
+    judge.model_name = os.getenv("RERANK_MODEL", "jev-1.13.0")
     return judge
 
 
@@ -260,7 +260,7 @@ def evaluate_with_jev(
                 raise JevJudgeAPIError(err_msg, status_code=401)
         from typesafe_sdk import TypeSafeClient
 
-        client = TypeSafeClient()
+        client = TypeSafeClient(model=os.getenv("RERANK_MODEL", "jev-1.13.0"))
 
     from typesafe_sdk import Choice, Noul, Score
 

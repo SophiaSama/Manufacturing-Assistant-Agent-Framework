@@ -16,8 +16,7 @@ dependencies = [
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
     "networkx>=3.6.1",
-    "posthog<6",
-    "python-dotenv==1.0.1",
+    "python-dotenv>=1.0.1",
     "sqlglot>=25,<26",
     "python-louvain>=0.16",
     "PyJWT>=2.8.0",
@@ -28,6 +27,7 @@ dependencies = [
     "typesafe-ai>=0.1.0",
     "langchain-typesafe>=0.0.1a3",
     "headroom-ai>=0.5.2",
+    "deepeval>=4.3.1",
 ]
 
 [dependency-groups]
