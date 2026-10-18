@@ -189,6 +189,12 @@ HEADROOM_MEMORY_ENABLED=true
 HEADROOM_COMPRESSION_RATIO=0.7
 HEADROOM_MIN_TOKENS_TO_COMPRESS=250
 HEADROOM_MEMORY_TOP_K=3
+
+# OpenTelemetry Tracing (Optional)
+OTEL_TRACING_ENABLED=false
+OTEL_SERVICE_NAME=nga-manufacturing-assistant
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+OTEL_TRACES_EXPORTER=otlp
 ```
 
 ### 3. Install Dependencies
@@ -237,6 +243,34 @@ uv run python -m enterprise_agent.cli --domain domains/manufacturing/pack.yaml -
 # Banking AML domain
 uv run python -m enterprise_agent.cli --domain domains/banking/pack.yaml --role compliance_analyst
 ```
+
+### 7. OpenTelemetry Tracing & Observability
+The framework uses **OpenTelemetry** (`src/nga/tracing.py`) to trace orchestrator nodes, System 1 Jev evaluations, tool executions, and token/cost telemetry (`openinference.span.kind` and `gen_ai.usage.*` semantic attributes). See [`docs/opentelemetry-tracing.md`](docs/opentelemetry-tracing.md) for full details.
+
+#### Configuring the Trace Provider (`.env`)
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `OTEL_TRACING_ENABLED` | `false` | Set to `true` to enable OpenTelemetry span recording. |
+| `OTEL_SERVICE_NAME` | `nga-manufacturing-assistant` | The `service.name` resource attribute attached to all spans. |
+| `OTEL_TRACES_EXPORTER` | `otlp` | Exporter mode: `otlp` (gRPC collector), `console` (stdout), `memory` (in-memory buffer), or `none`. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP gRPC collector endpoint when `OTEL_TRACES_EXPORTER=otlp`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | *(unset)* | Optional auth headers for cloud OTLP backends (e.g., `Authorization=Bearer <token>`). |
+
+#### Where to View Traces
+1. **Arize Phoenix (LLM/Agent-native OTLP UI):**
+   ```bash
+   docker run -d --name phoenix -p 6006:6006 -p 4317:4317 arizephoenix/phoenix:latest
+   ```
+   Open **`http://localhost:6006`** to inspect span trees (`CHAIN`, `TOOL`, `RETRIEVER`), Jev safety/grounding checks, and token cost breakdowns.
+2. **Jaeger (Distributed Tracing UI):**
+   ```bash
+   docker run -d --name jaeger -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest
+   ```
+   Open **`http://localhost:16686`** and select service `nga-manufacturing-assistant`.
+3. **Built-in Web UI Sidebar:**
+   The right-hand **⚡ Execution Trace** panel at `http://127.0.0.1:8000` displays per-node execution steps and tool outputs in real time without requiring an external collector.
+4. **Terminal (`OTEL_TRACES_EXPORTER=console`):**
+   Prints structured OpenTelemetry span payloads directly to `stdout`.
 
 ---
 
@@ -371,6 +405,7 @@ All evaluation outputs and benchmark runs are structured under `reports/` organi
 │       ├── ingestion/                # Vector store & graph builder pipelines
 │       ├── memory/                   # Episodic semantic memory (Headroom) & checkpointer
 │       ├── tools/                    # NGA SQL, document retrieval & verbatim tools
+│       ├── tracing.py                # OpenTelemetry tracing, span decorators & token telemetry
 │       └── ui/                       # Modern web dashboard (FastAPI backend + web assets)
 ├── tests/                            # Organized 4-tier testing hierarchy
 │   ├── unit/                         # Unit tests (cache, routing, grounding, judge, rerank, etc.)

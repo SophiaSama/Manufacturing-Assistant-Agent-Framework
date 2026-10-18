@@ -62,8 +62,9 @@ class Settings:
     variant_corpus_dir: str
     variant_vector_store_dir: str
     conflict_vector_store_dir: str
-    langsmith_tracing_enabled: bool
-    langsmith_project: str
+    otel_tracing_enabled: bool
+    otel_service_name: str
+    otel_exporter_otlp_endpoint: str
     # RBAC JWT
     jwt_secret: str
     jwt_dev_mode: bool
@@ -139,11 +140,12 @@ class Settings:
                     "Local mode requires these variables: " + ", ".join(missing)
                 )
 
-        tracing_enabled = (
-            False
-            if environment == "Local"
-            else os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
-        )
+        tracing_raw = (
+            os.getenv("OTEL_TRACING_ENABLED")
+            or os.getenv("TRACING_ENABLED")
+            or "false"
+        ).strip().lower()
+        tracing_enabled = tracing_raw in ("1", "true", "yes")
 
         return cls(
             execution_environment=environment,
@@ -170,10 +172,12 @@ class Settings:
             conflict_vector_store_dir=os.getenv(
                 "CONFLICT_VECTOR_STORE_DIR", "data/conflict_vector_store"
             ),
-            langsmith_tracing_enabled=tracing_enabled,
-            langsmith_project=os.getenv(
-                "LANGSMITH_PROJECT",
-                os.getenv("LANGCHAIN_PROJECT", "nga-manufacturing-assistant"),
+            otel_tracing_enabled=tracing_enabled,
+            otel_service_name=os.getenv(
+                "OTEL_SERVICE_NAME", "nga-manufacturing-assistant"
+            ),
+            otel_exporter_otlp_endpoint=os.getenv(
+                "OTEL_EXPORTER_OTLP_ENDPOINT", ""
             ),
             jwt_secret=os.getenv("JWT_SECRET", "dev-secret"),
             jwt_dev_mode=os.getenv("JWT_DEV_MODE", "true").lower() == "true",
