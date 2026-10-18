@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
+
+# Silence PostHog logger to prevent unhandled upload / DNS errors from polluting output
+logging.getLogger("posthog").setLevel(logging.CRITICAL)
 
 _VALID_ENVIRONMENTS = {"local": "Local", "cloud": "Cloud"}
 

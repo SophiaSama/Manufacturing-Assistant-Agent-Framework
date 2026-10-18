@@ -42,6 +42,159 @@ PINNED_JEV_MODEL = "jev-1.13.0"
 VALID_EVAL_MODES = ("system_one", "hybrid", "llm")
 
 
+class SafeOpenRouterModel(OpenRouterModel):
+    """OpenRouterModel subclass that explicitly closes AsyncOpenAI clients after generation.
+
+    Prevents `RuntimeError: Event loop is closed` during httpx.AsyncClient.aclose()
+    when safe_asyncio_run closes its temporary event loop.
+    """
+
+    async def _a_generate(
+        self,
+        prompt: str,
+        schema: Any = None,
+        audio: Any = None,
+    ) -> tuple[Any, float | None]:
+        client = self.load_model(async_mode=True)
+        try:
+            messages = self._build_messages(prompt, audio)
+            if schema:
+                try:
+                    completion = await client.chat.completions.create(
+                        model=self.name,
+                        messages=messages,
+                        response_format=self._schema_response_format(schema),
+                        temperature=self.temperature,
+                        **self.generation_kwargs,
+                    )
+                    from deepeval.models.llms.utils import trim_and_load_json
+
+                    json_output = trim_and_load_json(
+                        completion.choices[0].message.content
+                    )
+                    cost = self.calculate_cost(
+                        completion.usage.prompt_tokens,
+                        completion.usage.completion_tokens,
+                        response=completion,
+                    )
+                    return schema.model_validate(json_output), cost
+                except Exception as e:
+                    import warnings
+
+                    warnings.warn(
+                        f"Structured outputs not supported for model '{self.name}'. "
+                        f"Falling back to regular generation with JSON parsing. "
+                        f"Error: {str(e)}",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+
+            completion = await client.chat.completions.create(
+                model=self.name,
+                messages=messages,
+                temperature=self.temperature,
+                **self.generation_kwargs,
+            )
+            output = completion.choices[0].message.content
+            cost = self.calculate_cost(
+                completion.usage.prompt_tokens,
+                completion.usage.completion_tokens,
+                response=completion,
+            )
+            if schema:
+                from deepeval.models.llms.utils import trim_and_load_json
+
+                return schema.model_validate(trim_and_load_json(output)), cost
+            return output, cost
+        finally:
+            try:
+                import inspect
+
+                if hasattr(client, "close"):
+                    res = client.close()
+                    if inspect.isawaitable(res):
+                        await res
+                elif hasattr(client, "aclose"):
+                    res = client.aclose()
+                    if inspect.isawaitable(res):
+                        await res
+            except Exception:
+                pass
+
+            targets = [client]
+            raw_client = getattr(client, "_client", None)
+            if raw_client is not None and raw_client is not client:
+                targets.append(raw_client)
+
+            for target in targets:
+                if hasattr(target, "_state"):
+                    try:
+                        from httpx._client import ClientState
+
+                        target._state = ClientState.CLOSED
+                    except Exception:
+                        pass
+                try:
+                    setattr(target, "is_closed", True)
+                except Exception:
+                    pass
+
+    async def _a_generate_raw_response(
+        self,
+        prompt: str,
+        top_logprobs: int = 5,
+        audio: Any = None,
+    ) -> tuple[object, float | None]:
+        client = self.load_model(async_mode=True)
+        try:
+            completion = await client.chat.completions.create(
+                model=self.name,
+                messages=self._build_messages(prompt, audio),
+                temperature=self.temperature,
+                logprobs=True,
+                top_logprobs=top_logprobs,
+                **self.generation_kwargs,
+            )
+            cost = self.calculate_cost(
+                completion.usage.prompt_tokens,
+                completion.usage.completion_tokens,
+                response=completion,
+            )
+            return completion, cost
+        finally:
+            try:
+                import inspect
+
+                if hasattr(client, "close"):
+                    res = client.close()
+                    if inspect.isawaitable(res):
+                        await res
+                elif hasattr(client, "aclose"):
+                    res = client.aclose()
+                    if inspect.isawaitable(res):
+                        await res
+            except Exception:
+                pass
+
+            targets = [client]
+            raw_client = getattr(client, "_client", None)
+            if raw_client is not None and raw_client is not client:
+                targets.append(raw_client)
+
+            for target in targets:
+                if hasattr(target, "_state"):
+                    try:
+                        from httpx._client import ClientState
+
+                        target._state = ClientState.CLOSED
+                    except Exception:
+                        pass
+                try:
+                    setattr(target, "is_closed", True)
+                except Exception:
+                    pass
+
+
 def resolve_deepeval_llm_model(
     llm_model: str | DeepEvalBaseLLM | None = None,
     eval_mode: str = "system_one",
@@ -50,7 +203,7 @@ def resolve_deepeval_llm_model(
 
     Under `system_one` mode, returns `None` because no LLM is built or called.
     Under `hybrid` or `llm` mode, uses the provided `llm_model`, or constructs
-    an `OpenRouterModel` if `OPENROUTER_API_KEY` is configured, else falls back
+    a `SafeOpenRouterModel` if `OPENROUTER_API_KEY` is configured, else falls back
     to OpenAI model string.
     """
     if eval_mode == "system_one":
@@ -68,7 +221,7 @@ def resolve_deepeval_llm_model(
 
     if openrouter_key and not openrouter_key.lower().startswith("your-"):
         base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-        return OpenRouterModel(
+        return SafeOpenRouterModel(
             model=model_name,
             api_key=openrouter_key,
             base_url=base_url,

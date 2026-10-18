@@ -47,3 +47,5 @@ node_modules/
 AGENTS.md
 .agents/plugins/headroom/mcp_config.json
 .agents/plugins/headroom/plugin.json
+
+.agents/teamwork

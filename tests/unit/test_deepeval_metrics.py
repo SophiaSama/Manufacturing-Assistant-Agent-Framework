@@ -219,3 +219,270 @@ def test_evaluate_test_case_api_error_handling():
             raise_on_api_error=True,
         )
     assert "401" in str(exc_info.value) or "Unauthorized" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_safe_openrouter_model_lifecycle():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from nga.evaluation.deepeval_metrics import SafeOpenRouterModel
+
+    model = SafeOpenRouterModel(
+        model="openrouter/test-model",
+        api_key="test-key",
+        base_url="https://openrouter.ai/api/v1",
+    )
+    mock_client = AsyncMock()
+    mock_resp = AsyncMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="test response"))]
+    mock_resp.usage = MagicMock(prompt_tokens=10, completion_tokens=15)
+    mock_client.chat.completions.create.return_value = mock_resp
+
+    with patch.object(model, "load_model", return_value=mock_client):
+        res, cost = await model._a_generate("test prompt")
+        assert res == "test response"
+        assert cost is not None
+        assert mock_client.close.await_count == 1
+        assert getattr(mock_client._client, "is_closed", False) is True
+
+
+@pytest.mark.asyncio
+async def test_safe_openrouter_model_exception_teardown():
+    from unittest.mock import AsyncMock, patch
+
+    from nga.evaluation.deepeval_metrics import SafeOpenRouterModel
+
+    model = SafeOpenRouterModel(
+        model="openrouter/test-model",
+        api_key="test-key",
+        base_url="https://openrouter.ai/api/v1",
+    )
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create.side_effect = RuntimeError("OpenRouter 500 error")
+
+    with patch.object(model, "load_model", return_value=mock_client):
+        with pytest.raises(RuntimeError, match="OpenRouter 500 error"):
+            await model._a_generate("test prompt")
+        assert mock_client.close.await_count == 1
+        assert getattr(mock_client._client, "is_closed", False) is True
+
+
+@pytest.mark.asyncio
+async def test_safe_openrouter_model_raw_response_lifecycle():
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from nga.evaluation.deepeval_metrics import SafeOpenRouterModel
+
+    model = SafeOpenRouterModel(
+        model="openrouter/test-model",
+        api_key="test-key",
+        base_url="https://openrouter.ai/api/v1",
+    )
+    mock_client = AsyncMock()
+    mock_resp = AsyncMock()
+    mock_resp.usage = MagicMock(prompt_tokens=8, completion_tokens=12)
+    mock_client.chat.completions.create.return_value = mock_resp
+
+    with patch.object(model, "load_model", return_value=mock_client):
+        raw_res, cost = await model._a_generate_raw_response("test prompt")
+        assert raw_res is mock_resp
+        assert mock_client.close.await_count == 1
+        assert getattr(mock_client._client, "is_closed", False) is True
+
+
+@pytest.mark.asyncio
+async def test_safe_openrouter_model_with_real_httpx_client():
+    """Verify that a real httpx.AsyncClient has is_closed == True without AttributeError."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    import httpx
+
+    from nga.evaluation.deepeval_metrics import SafeOpenRouterModel
+
+    model = SafeOpenRouterModel(
+        model="openrouter/test-model",
+        api_key="test-key",
+        base_url="https://openrouter.ai/api/v1",
+    )
+    real_httpx_client = httpx.AsyncClient()
+    mock_client = AsyncMock()
+    mock_client._client = real_httpx_client
+    mock_resp = AsyncMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="real client response"))]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=10)
+    mock_client.chat.completions.create.return_value = mock_resp
+
+    with patch.object(model, "load_model", return_value=mock_client):
+        res, cost = await model._a_generate("test prompt")
+        assert res == "real client response"
+        assert mock_client._client.is_closed is True
+
+
+def test_close_active_chat_models_with_real_httpx_client():
+    """Verify close_active_chat_models cleans up real httpx clients and clears registry."""
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from nga.providers.factory import (
+        close_active_chat_models,
+        get_active_chat_models,
+        register_chat_model,
+    )
+
+    real_httpx_client = httpx.AsyncClient()
+    mock_model = MagicMock()
+    mock_async_openai = MagicMock()
+    mock_async_openai._client = real_httpx_client
+    mock_model.root_async_client = mock_async_openai
+
+    register_chat_model(mock_model)
+    assert mock_model in get_active_chat_models()
+
+    close_active_chat_models()
+    assert real_httpx_client.is_closed is True
+    assert get_active_chat_models() == []
+
+
+def test_close_active_chat_models_with_ollama_client():
+    """Verify close_active_chat_models cleans up ChatOllama _async_client."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    import httpx
+
+    from nga.providers.factory import (
+        close_active_chat_models,
+        get_active_chat_models,
+        register_chat_model,
+    )
+
+    real_httpx_client = httpx.AsyncClient()
+    mock_model = MagicMock(spec=["_async_client"])
+    mock_ollama_async = MagicMock()
+    mock_ollama_async._client = real_httpx_client
+    mock_ollama_async.close = AsyncMock()
+    mock_model._async_client = mock_ollama_async
+
+    register_chat_model(mock_model)
+    assert mock_model in get_active_chat_models()
+
+    close_active_chat_models()
+    assert real_httpx_client.is_closed is True
+    assert mock_ollama_async.close.await_count == 1
+    assert get_active_chat_models() == []
+
+
+@pytest.mark.asyncio
+async def test_close_active_chat_models_when_loop_is_running():
+    """Verify close_active_chat_models works safely even inside a running event loop."""
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from nga.providers.factory import (
+        close_active_chat_models,
+        get_active_chat_models,
+        register_chat_model,
+    )
+
+    real_httpx_client = httpx.AsyncClient()
+    mock_model = MagicMock()
+    mock_async_openai = MagicMock()
+    mock_async_openai._client = real_httpx_client
+    mock_model.root_async_client = mock_async_openai
+
+    register_chat_model(mock_model)
+    assert mock_model in get_active_chat_models()
+
+    # Calling synchronous close_active_chat_models from inside an async test
+    close_active_chat_models()
+    assert real_httpx_client.is_closed is True
+    assert get_active_chat_models() == []
+
+
+@pytest.mark.asyncio
+async def test_aclose_active_chat_models():
+    """Verify aclose_active_chat_models asynchronously closes all registered models."""
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from nga.providers.factory import (
+        aclose_active_chat_models,
+        get_active_chat_models,
+        register_chat_model,
+    )
+
+    real_httpx_client = httpx.AsyncClient()
+    mock_model = MagicMock()
+    mock_async_openai = MagicMock()
+    mock_async_openai._client = real_httpx_client
+    mock_model.root_async_client = mock_async_openai
+
+    register_chat_model(mock_model)
+    assert mock_model in get_active_chat_models()
+
+    await aclose_active_chat_models()
+    assert real_httpx_client.is_closed is True
+    assert get_active_chat_models() == []
+
+
+def test_close_active_chat_models_with_direct_httpx_client():
+    """Verify close_active_chat_models cleans up direct httpx.AsyncClient attributes."""
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from nga.providers.factory import (
+        close_active_chat_models,
+        get_active_chat_models,
+        register_chat_model,
+    )
+
+    real_httpx_client = httpx.AsyncClient()
+    mock_model = MagicMock(spec=["async_client"])
+    mock_model.async_client = real_httpx_client
+
+    register_chat_model(mock_model)
+    assert mock_model in get_active_chat_models()
+
+    close_active_chat_models()
+    assert real_httpx_client.is_closed is True
+    assert get_active_chat_models() == []
+
+
+def test_conftest_cleanup_hooks_execute_cleanly():
+    """Verify cleanup_async_resources and pytest_sessionfinish execute without errors."""
+    from unittest.mock import MagicMock
+
+    import httpx
+
+    from nga.memory.headroom_memory import NgaEpisodicMemory
+    from nga.providers.factory import get_active_chat_models, register_chat_model
+    from tests.conftest import cleanup_async_resources, pytest_sessionfinish
+
+    real_httpx_client = httpx.AsyncClient()
+    mock_model = MagicMock()
+    mock_async = MagicMock()
+    mock_async._client = real_httpx_client
+    mock_model.root_async_client = mock_async
+    register_chat_model(mock_model)
+
+    mem = NgaEpisodicMemory(db_path="/tmp/test_conftest_cleanup.db")
+
+    # Run the generator fixture teardown
+    gen = cleanup_async_resources()
+    next(gen)  # run up to yield
+    try:
+        next(gen)
+    except StopIteration:
+        pass
+
+    assert real_httpx_client.is_closed is True
+    assert get_active_chat_models() == []
+    assert mem._closed is True
+
+    # Test pytest_sessionfinish
+    pytest_sessionfinish(None, 0)
+
+
