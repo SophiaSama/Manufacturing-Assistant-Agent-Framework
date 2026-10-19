@@ -13,6 +13,7 @@ Eval modes:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from dataclasses import asdict, dataclass, field
@@ -484,8 +485,8 @@ def extract_manufacturing_breakdown(
     }
 
 
-@traceable_if_enabled(run_type="chain", name="deepeval.evaluate_test_case")
-def evaluate_test_case_with_deepeval(
+@traceable_if_enabled(run_type="chain", name="deepeval.a_evaluate_test_case")
+async def a_evaluate_test_case_with_deepeval(
     test_case: LLMTestCase,
     eval_mode: str = "system_one",
     system_one_model: str | DeepEvalBaseSystemOneModel = PINNED_JEV_MODEL,
@@ -496,8 +497,9 @@ def evaluate_test_case_with_deepeval(
     deterministic_checks_map: dict[str, bool] | None = None,
     pass_threshold: float = 0.70,
     raise_on_api_error: bool = True,
+    concurrent_metrics: bool = True,
 ) -> DeepEvalCaseResult:
-    """Run built-in RAG metrics and custom `JevEval` manufacturing metric on an `LLMTestCase`."""
+    """Async variant: Run built-in RAG metrics and custom `JevEval` manufacturing metric on an `LLMTestCase`."""
     if rag_metrics is None:
         rag_metrics = make_built_in_rag_metrics(
             eval_mode=eval_mode,
@@ -525,9 +527,12 @@ def evaluate_test_case_with_deepeval(
     total_output_tokens = 0
     total_cost_usd = 0.0
 
-    for m_name, metric in all_metrics.items():
+    async def _measure_single(m_name: str, metric: BaseMetric) -> None:
         try:
-            metric.measure(test_case, _show_indicator=False)
+            if hasattr(metric, "a_measure") and callable(metric.a_measure):
+                await metric.a_measure(test_case, _show_indicator=False)
+            else:
+                metric.measure(test_case, _show_indicator=False)
         except Exception as exc:
             is_err, status_code, msg = is_api_error(exc)
             if is_err and raise_on_api_error:
@@ -544,6 +549,31 @@ def evaluate_test_case_with_deepeval(
                 ) from exc
             raise
 
+    if concurrent_metrics:
+        await asyncio.gather(
+            *[_measure_single(m_name, metric) for m_name, metric in all_metrics.items()]
+        )
+    else:
+        for m_name, metric in all_metrics.items():
+            try:
+                metric.measure(test_case, _show_indicator=False)
+            except Exception as exc:
+                is_err, status_code, msg = is_api_error(exc)
+                if is_err and raise_on_api_error:
+                    if eval_mode in ("hybrid", "llm") and "typesafe" not in msg.lower():
+                        raise LLMJudgeAPIError(
+                            f"DeepEval LLM API error in {m_name} (status={status_code}): {msg}",
+                            status_code=status_code,
+                            original_error=exc,
+                        ) from exc
+                    raise JevJudgeAPIError(
+                        f"DeepEval Jev API error in {m_name} (status={status_code}): {msg}",
+                        status_code=status_code,
+                        original_error=exc,
+                    ) from exc
+                raise
+
+    for m_name, metric in all_metrics.items():
         conf = getattr(metric, "confidence", None)
         confidences[m_name] = round(float(conf), 4) if conf is not None else None
         reasons[m_name] = getattr(metric, "reason", None)
@@ -596,11 +626,13 @@ def evaluate_test_case_with_deepeval(
     non_null_confs = [c for c in confidences.values() if c is not None]
     min_conf = min(non_null_confs) if non_null_confs else None
 
-    meta = (
-        getattr(test_case, "metadata", None)
-        or getattr(test_case, "additional_metadata", None)
-        or {}
-    )
+    meta = getattr(test_case, "metadata", None)
+    if not meta:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            meta = getattr(test_case, "additional_metadata", None) or {}
     q_id = str(meta.get("question_id") or test_case.name or "UNKNOWN")
     category = str(meta.get("category") or "general")
     model_str = (
@@ -670,4 +702,39 @@ def evaluate_test_case_with_deepeval(
         input_tokens=total_input_tokens,
         output_tokens=total_output_tokens,
         evaluation_cost_usd=round(total_cost_usd, 6),
+    )
+
+
+@traceable_if_enabled(run_type="chain", name="deepeval.evaluate_test_case")
+def evaluate_test_case_with_deepeval(
+    test_case: LLMTestCase,
+    eval_mode: str = "system_one",
+    system_one_model: str | DeepEvalBaseSystemOneModel = PINNED_JEV_MODEL,
+    llm_model: str | DeepEvalBaseLLM | None = None,
+    rag_metrics: dict[str, BaseMetric] | None = None,
+    manufacturing_metric: JevEval | None = None,
+    contradiction_metric: JevEval | None = None,
+    deterministic_checks_map: dict[str, bool] | None = None,
+    pass_threshold: float = 0.70,
+    raise_on_api_error: bool = True,
+    concurrent_metrics: bool = True,
+) -> DeepEvalCaseResult:
+    """Run built-in RAG metrics and custom `JevEval` manufacturing metric on an `LLMTestCase`."""
+    from deepeval.utils import get_or_create_event_loop
+
+    loop = get_or_create_event_loop()
+    return loop.run_until_complete(
+        a_evaluate_test_case_with_deepeval(
+            test_case=test_case,
+            eval_mode=eval_mode,
+            system_one_model=system_one_model,
+            llm_model=llm_model,
+            rag_metrics=rag_metrics,
+            manufacturing_metric=manufacturing_metric,
+            contradiction_metric=contradiction_metric,
+            deterministic_checks_map=deterministic_checks_map,
+            pass_threshold=pass_threshold,
+            raise_on_api_error=raise_on_api_error,
+            concurrent_metrics=concurrent_metrics,
+        )
     )

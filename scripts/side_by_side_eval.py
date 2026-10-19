@@ -52,6 +52,7 @@ def main(
     legacy_evaluator: Callable[[str, str], JevEvaluationResult] | None = None,
     include_contradictions: bool = True,
     output_dir: Path | str | None = None,
+    max_workers: int = 4,
 ) -> bool:
     parser = argparse.ArgumentParser(
         description="Run Legacy NGA Jev Harness and DeepEval Harness side-by-side."
@@ -75,6 +76,12 @@ def main(
         help=f"Pinned System One Jev model name (default: {PINNED_JEV_MODEL}).",
     )
     parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help="Number of concurrent workers for test-case fan-out (default: 4).",
+    )
+    parser.add_argument(
         "--no-contradictions",
         action="store_true",
         help="Skip cross-document contradiction scenarios.",
@@ -85,6 +92,7 @@ def main(
     eff_eval_mode = eval_mode if eval_mode != "system_one" else args.eval_mode
     eff_model = system_one_model if system_one_model != PINNED_JEV_MODEL else args.model
     eff_contradictions = include_contradictions and not args.no_contradictions
+    eff_workers = max_workers if max_workers != 4 else args.max_workers
 
     configure_tracing()
 
@@ -174,6 +182,7 @@ def main(
         system_one_model=eff_model,
         llm_model=llm_model,
         legacy_evaluator=legacy_evaluator,
+        max_workers=eff_workers,
     )
 
     md_path, json_path = save_side_by_side_report(summary, output_dir=output_dir)

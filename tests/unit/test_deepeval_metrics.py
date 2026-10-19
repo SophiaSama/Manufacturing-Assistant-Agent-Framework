@@ -25,6 +25,7 @@ from deepeval.test_case import LLMTestCase
 from nga.evaluation.deepeval_metrics import (
     PINNED_JEV_MODEL,
     DeepEvalCaseResult,
+    a_evaluate_test_case_with_deepeval,
     evaluate_test_case_with_deepeval,
     make_built_in_rag_metrics,
     make_contradiction_jev_eval_metric,
@@ -470,8 +471,9 @@ def test_conftest_cleanup_hooks_execute_cleanly():
 
     mem = NgaEpisodicMemory(db_path="/tmp/test_conftest_cleanup.db")
 
-    # Run the generator fixture teardown
-    gen = cleanup_async_resources()
+    # Run the generator fixture teardown via its underlying function
+    fn = getattr(cleanup_async_resources, "__wrapped__", cleanup_async_resources)
+    gen = fn()
     next(gen)  # run up to yield
     try:
         next(gen)
@@ -484,5 +486,77 @@ def test_conftest_cleanup_hooks_execute_cleanly():
 
     # Test pytest_sessionfinish
     pytest_sessionfinish(None, 0)
+
+
+def test_evaluate_test_case_with_deepeval_concurrent_metrics():
+    """Verify concurrent metric fan-out delivers identical results and passes cleanly."""
+    mock_model = MockDeterministicSystemOneModel(
+        model_name="jev-1.13.0",
+        noul_prob=0.95,
+        score_level=5,
+        failure_mode="none",
+    )
+    tc = LLMTestCase(
+        input="What is the torque specification at Station 144?",
+        actual_output="105 Nm per SOP-OPR-101",
+        expected_output="105 Nm per SOP-OPR-101",
+        retrieval_context=["[SOP-OPR-101] Station 144 torque is 105 Nm."],
+        additional_metadata={"question_id": "TEST-CONCURRENT-001", "category": "sop_lookup"},
+    )
+
+    # 1. Concurrent execution (default)
+    res_concurrent = evaluate_test_case_with_deepeval(
+        test_case=tc,
+        eval_mode="system_one",
+        system_one_model=mock_model,
+        pass_threshold=0.70,
+        concurrent_metrics=True,
+    )
+
+    # 2. Sequential execution
+    res_sequential = evaluate_test_case_with_deepeval(
+        test_case=tc,
+        eval_mode="system_one",
+        system_one_model=mock_model,
+        pass_threshold=0.70,
+        concurrent_metrics=False,
+    )
+
+    assert res_concurrent.passed is True
+    assert res_sequential.passed is True
+    assert res_concurrent.overall_score == res_sequential.overall_score
+    assert res_concurrent.rubric_score_0_to_5 == res_sequential.rubric_score_0_to_5
+    assert res_concurrent.faithfulness == res_sequential.faithfulness
+    assert res_concurrent.answer_relevancy == res_sequential.answer_relevancy
+
+
+@pytest.mark.asyncio
+async def test_a_evaluate_test_case_with_deepeval():
+    """Verify direct async a_evaluate_test_case_with_deepeval invocation."""
+    mock_model = MockDeterministicSystemOneModel(
+        model_name="jev-1.13.0",
+        noul_prob=0.95,
+        score_level=5,
+        failure_mode="none",
+    )
+    tc = LLMTestCase(
+        input="What is the torque specification at Station 144?",
+        actual_output="105 Nm per SOP-OPR-101",
+        expected_output="105 Nm per SOP-OPR-101",
+        retrieval_context=["[SOP-OPR-101] Station 144 torque is 105 Nm."],
+        additional_metadata={"question_id": "TEST-ASYNC-001", "category": "sop_lookup"},
+    )
+
+    res = await a_evaluate_test_case_with_deepeval(
+        test_case=tc,
+        eval_mode="system_one",
+        system_one_model=mock_model,
+        pass_threshold=0.70,
+        concurrent_metrics=True,
+    )
+    assert res.passed is True
+    assert res.overall_score >= 0.70
+    assert res.question_id == "TEST-ASYNC-001"
+
 
 

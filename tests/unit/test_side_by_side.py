@@ -147,3 +147,72 @@ def test_run_side_by_side_comparison_with_mock_model(tmp_path):
     saved_data = json.loads(json_path.read_text(encoding="utf-8"))
     assert saved_data["total_cases"] == 4
     assert len(saved_data["cases"]) == 4
+
+
+def test_run_side_by_side_comparison_concurrent_workers():
+    """Verify that concurrent worker fan-out (max_workers=4) preserves case ordering and computes correct summary."""
+    mock_model = MockDeterministicSystemOneModel(
+        model_name="jev-1.13.0",
+        noul_prob=0.95,
+        score_level=5,
+        failure_mode="none",
+    )
+
+    def mock_legacy_evaluator(cand: str, gold: str) -> JevEvaluationResult:
+        return JevEvaluationResult(
+            score_int=5,
+            score_continuous=5.0,
+            confidence=0.92,
+            probabilities={"5": 0.92},
+            is_faithful=0.95,
+            specs_accurate=0.95,
+            completeness=0.90,
+            covers_core_intent=0.90,
+            failure_mode="none",
+            failure_mode_probabilities={"none": 0.90},
+            latency_ms=25.0,
+        )
+
+    sample_questions = [
+        {
+            "id": f"SAMPLE-{i}",
+            "category": "sop_lookup",
+            "tier": "L1",
+            "question": f"What is specification {i}?",
+            "expected_answer": f"Spec {i}",
+            "source_docs": ["SOP-OPR-101"],
+        }
+        for i in range(1, 4)
+    ]
+
+    summary_concurrent = run_side_by_side_comparison(
+        questions=sample_questions,
+        conflict_scenarios=[],
+        eval_mode="system_one",
+        system_one_model=mock_model,
+        legacy_evaluator=mock_legacy_evaluator,
+        include_perturbed_controls=True,
+        max_workers=4,
+        concurrent_metrics=True,
+    )
+
+    summary_sequential = run_side_by_side_comparison(
+        questions=sample_questions,
+        conflict_scenarios=[],
+        eval_mode="system_one",
+        system_one_model=mock_model,
+        legacy_evaluator=mock_legacy_evaluator,
+        include_perturbed_controls=True,
+        max_workers=1,
+        concurrent_metrics=False,
+    )
+
+    assert summary_concurrent.total_cases == 6
+    assert summary_sequential.total_cases == 6
+    assert summary_concurrent.positive_cases == 3
+    assert summary_concurrent.perturbed_cases == 3
+    assert summary_concurrent.legacy_positive_pass_rate == summary_sequential.legacy_positive_pass_rate
+    assert summary_concurrent.deepeval_positive_pass_rate == summary_sequential.deepeval_positive_pass_rate
+    # Verify exact case ordering is preserved
+    assert [c.case_id for c in summary_concurrent.cases] == [c.case_id for c in summary_sequential.cases]
+

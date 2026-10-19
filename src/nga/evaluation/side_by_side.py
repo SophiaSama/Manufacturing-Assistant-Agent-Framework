@@ -9,6 +9,7 @@ the legacy harness.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import re
@@ -27,9 +28,7 @@ from nga.evaluation.deepeval_metrics import (
     PINNED_JEV_MODEL,
     DeepEvalCaseResult,
     evaluate_test_case_with_deepeval,
-    make_built_in_rag_metrics,
     make_contradiction_jev_eval_metric,
-    make_manufacturing_jev_eval_metric,
 )
 from nga.evaluation.judge import (
     JevEvaluationResult,
@@ -280,6 +279,8 @@ def run_side_by_side_comparison(
     legacy_evaluator: Callable[[str, str], JevEvaluationResult] | None = None,
     include_perturbed_controls: bool = True,
     pass_threshold: float = 0.70,
+    max_workers: int = 4,
+    concurrent_metrics: bool = True,
 ) -> SideBySideSummary:
     """Run legacy Jev harness and DeepEval harness side-by-side on benchmark & conflict cases."""
     if legacy_evaluator is None:
@@ -287,22 +288,9 @@ def run_side_by_side_comparison(
             return evaluate_with_jev(cand, gold)
         legacy_evaluator = _default_legacy
 
-    rag_metrics = make_built_in_rag_metrics(
-        eval_mode=eval_mode,
-        system_one_model=system_one_model,
-        llm_model=llm_model,
-    )
-    mfg_metric = make_manufacturing_jev_eval_metric(
-        system_one_model=system_one_model,
-        threshold=pass_threshold,
-    )
-    contra_metric = make_contradiction_jev_eval_metric(
-        system_one_model=system_one_model,
-    )
+    work_items: list[dict[str, Any]] = []
 
-    comparisons: list[SideBySideCaseComparison] = []
-
-    # 1. Evaluate benchmark questions (positive controls + optional perturbed negative controls)
+    # 1. Collect benchmark questions (positive controls + optional perturbed negative controls)
     for q in questions:
         qid = str(q.get("id", "UNKNOWN"))
         category = str(q.get("category", "general"))
@@ -312,111 +300,95 @@ def run_side_by_side_comparison(
             or f"Based on plant specifications and records, the verified answer is: {expected}"
         )
 
-        # Positive control
         pos_row = {**q, "id": f"{qid}:positive", "condition": "positive"}
         pos_tc = to_deep_eval_test_case(question_data=pos_row, actual_output=pos_candidate)
-        leg_pos = legacy_evaluator(pos_candidate, expected)
-        de_pos = evaluate_test_case_with_deepeval(
-            test_case=pos_tc,
-            eval_mode=eval_mode,
-            system_one_model=system_one_model,
-            llm_model=llm_model,
-            rag_metrics=rag_metrics,
-            manufacturing_metric=mfg_metric,
-            pass_threshold=pass_threshold,
-        )
-        agree_pos = compute_criterion_agreement(leg_pos, de_pos, pass_threshold=pass_threshold)
-        comparisons.append(
-            SideBySideCaseComparison(
-                case_id=f"{qid}:positive",
-                category=category,
-                condition="positive",
-                legacy_score_int=leg_pos.score_int,
-                legacy_score_normalized=round(leg_pos.score_int / 5.0, 4),
-                legacy_passed=(leg_pos.score_int / 5.0) >= pass_threshold,
-                legacy_is_faithful=round(leg_pos.is_faithful, 4),
-                legacy_specs_accurate=round(leg_pos.specs_accurate, 4),
-                legacy_completeness=round(leg_pos.completeness, 4),
-                legacy_failure_mode=leg_pos.failure_mode,
-                legacy_confidence=leg_pos.confidence,
-                legacy_latency_ms=round(leg_pos.latency_ms, 2),
-                deepeval_result=de_pos,
-                agreement=agree_pos,
-            )
-        )
+        work_items.append({
+            "case_id": f"{qid}:positive",
+            "category": category,
+            "condition": "positive",
+            "candidate": pos_candidate,
+            "expected": expected,
+            "tc": pos_tc,
+            "is_contradiction": False,
+        })
 
-        # Perturbed negative control
         if include_perturbed_controls:
             neg_candidate = perturb_manufacturing_answer(expected)
             neg_row = {**q, "id": f"{qid}:perturbed", "condition": "perturbed"}
             neg_tc = to_deep_eval_test_case(question_data=neg_row, actual_output=neg_candidate)
-            leg_neg = legacy_evaluator(neg_candidate, expected)
-            de_neg = evaluate_test_case_with_deepeval(
-                test_case=neg_tc,
-                eval_mode=eval_mode,
-                system_one_model=system_one_model,
-                llm_model=llm_model,
-                rag_metrics=rag_metrics,
-                manufacturing_metric=mfg_metric,
-                pass_threshold=pass_threshold,
-            )
-            agree_neg = compute_criterion_agreement(leg_neg, de_neg, pass_threshold=pass_threshold)
-            comparisons.append(
-                SideBySideCaseComparison(
-                    case_id=f"{qid}:perturbed",
-                    category=category,
-                    condition="perturbed",
-                    legacy_score_int=leg_neg.score_int,
-                    legacy_score_normalized=round(leg_neg.score_int / 5.0, 4),
-                    legacy_passed=(leg_neg.score_int / 5.0) >= pass_threshold,
-                    legacy_is_faithful=round(leg_neg.is_faithful, 4),
-                    legacy_specs_accurate=round(leg_neg.specs_accurate, 4),
-                    legacy_completeness=round(leg_neg.completeness, 4),
-                    legacy_failure_mode=leg_neg.failure_mode,
-                    legacy_confidence=leg_neg.confidence,
-                    legacy_latency_ms=round(leg_neg.latency_ms, 2),
-                    deepeval_result=de_neg,
-                    agreement=agree_neg,
-                )
-            )
+            work_items.append({
+                "case_id": f"{qid}:perturbed",
+                "category": category,
+                "condition": "perturbed",
+                "candidate": neg_candidate,
+                "expected": expected,
+                "tc": neg_tc,
+                "is_contradiction": False,
+            })
 
-    # 2. Evaluate cross-document contradiction scenarios
+    # 2. Collect cross-document contradiction scenarios
     scenarios = conflict_scenarios if conflict_scenarios is not None else DEFAULT_CONFLICT_SCENARIOS
     for scenario in scenarios:
         golden = str(scenario.get("golden", ""))
         tc_map = conflict_scenario_to_test_cases(scenario)
         for condition, tc in tc_map.items():
             cand = tc.actual_output or ""
-            leg_c = legacy_evaluator(cand, golden)
-            de_c = evaluate_test_case_with_deepeval(
-                test_case=tc,
-                eval_mode=eval_mode,
-                system_one_model=system_one_model,
-                llm_model=llm_model,
-                rag_metrics=rag_metrics,
-                manufacturing_metric=mfg_metric,
-                contradiction_metric=contra_metric,
-                pass_threshold=pass_threshold,
-            )
-            agree_c = compute_criterion_agreement(leg_c, de_c, pass_threshold=pass_threshold)
-            comparisons.append(
-                SideBySideCaseComparison(
-                    case_id=str(tc.name or f"{scenario.get('id')}:{condition}"),
-                    category="contradiction",
-                    condition=condition,
-                    legacy_score_int=leg_c.score_int,
-                    legacy_score_normalized=round(leg_c.score_int / 5.0, 4),
-                    legacy_passed=(leg_c.score_int / 5.0) >= pass_threshold,
-                    legacy_is_faithful=round(leg_c.is_faithful, 4),
-                    legacy_specs_accurate=round(leg_c.specs_accurate, 4),
-                    legacy_completeness=round(leg_c.completeness, 4),
-                    legacy_failure_mode=leg_c.failure_mode,
-                    legacy_confidence=leg_c.confidence,
-                    legacy_latency_ms=round(leg_c.latency_ms, 2),
-                    deepeval_result=de_c,
-                    agreement=agree_c,
-                )
-            )
+            work_items.append({
+                "case_id": str(tc.name or f"{scenario.get('id')}:{condition}"),
+                "category": "contradiction",
+                "condition": condition,
+                "candidate": cand,
+                "expected": golden,
+                "tc": tc,
+                "is_contradiction": True,
+            })
+
+    def _evaluate_item(item: dict[str, Any]) -> SideBySideCaseComparison:
+        candidate = item["candidate"]
+        expected = item["expected"]
+        tc = item["tc"]
+        leg = legacy_evaluator(candidate, expected)
+
+        contra_m = (
+            make_contradiction_jev_eval_metric(system_one_model=system_one_model)
+            if item["is_contradiction"]
+            else None
+        )
+
+        de = evaluate_test_case_with_deepeval(
+            test_case=tc,
+            eval_mode=eval_mode,
+            system_one_model=system_one_model,
+            llm_model=llm_model,
+            contradiction_metric=contra_m,
+            pass_threshold=pass_threshold,
+            concurrent_metrics=concurrent_metrics,
+        )
+        agree = compute_criterion_agreement(leg, de, pass_threshold=pass_threshold)
+        return SideBySideCaseComparison(
+            case_id=item["case_id"],
+            category=item["category"],
+            condition=item["condition"],
+            legacy_score_int=leg.score_int,
+            legacy_score_normalized=round(leg.score_int / 5.0, 4),
+            legacy_passed=(leg.score_int / 5.0) >= pass_threshold,
+            legacy_is_faithful=round(leg.is_faithful, 4),
+            legacy_specs_accurate=round(leg.specs_accurate, 4),
+            legacy_completeness=round(leg.completeness, 4),
+            legacy_failure_mode=leg.failure_mode,
+            legacy_confidence=leg.confidence,
+            legacy_latency_ms=round(leg.latency_ms, 2),
+            deepeval_result=de,
+            agreement=agree,
+        )
+
+    if max_workers > 1 and len(work_items) > 1:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(max_workers, len(work_items))
+        ) as executor:
+            comparisons = list(executor.map(_evaluate_item, work_items))
+    else:
+        comparisons = [_evaluate_item(item) for item in work_items]
 
     total = max(len(comparisons), 1)
     pos_cases = [c for c in comparisons if c.condition == "positive"]
