@@ -167,10 +167,16 @@ class TestLongReasoningBenchmark:
             simulated_sql_payload = {
                 "query": "SELECT * FROM build_records JOIN torque_readings ...",
                 "rows": [
-                    {"vin": f"VIN-2025-{i:04d}", "station": "ST-144", "torque": 108.5 + (i * 0.2), "status": "FAIL"}
-                    for i in range(40)
+                    {
+                        "vin": f"VIN-2025-{i // 5:04d}",
+                        "station": "ST-144",
+                        "torque": 108.5,
+                        "status": "FAIL",
+                        "operator": "OP-99",
+                    }
+                    for i in range(100)
                 ],
-                "row_count": 40,
+                "row_count": 100,
             }
             simulated_sop_payload = {
                 "query": scenario["question"],
@@ -196,7 +202,7 @@ class TestLongReasoningBenchmark:
             }
 
             # 1. Measure raw size
-            raw_sql_str = json.dumps(simulated_sql_payload)
+            raw_sql_str = json.dumps(simulated_sql_payload, indent=2)
             raw_sop_str = json.dumps(simulated_sop_payload)
             total_raw_chars = len(raw_sql_str) + len(raw_sop_str)
 

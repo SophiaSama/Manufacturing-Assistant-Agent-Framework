@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from deepeval.metrics import (
     AnswerRelevancyMetric,
@@ -32,6 +34,13 @@ from nga.evaluation.deepeval_metrics import (
     make_manufacturing_jev_eval_metric,
     resolve_deepeval_llm_model,
 )
+
+
+@pytest.fixture(autouse=True)
+def ensure_typesafe_api_key(monkeypatch):
+    """Ensure TYPESAFE_API_KEY is present so DeepEval metrics can be initialized in unit tests without live credentials."""
+    if not os.getenv("TYPESAFE_API_KEY", "").strip():
+        monkeypatch.setenv("TYPESAFE_API_KEY", "test-typesafe-api-key")
 
 
 class MockDeterministicSystemOneModel(DeepEvalBaseSystemOneModel):
@@ -125,6 +134,14 @@ def test_make_built_in_rag_metrics_system_one():
         )
         assert "jev-1.13.0" in model_name
 
+    mock_model = MockDeterministicSystemOneModel(model_name="jev-1.13.0")
+    mock_metrics = make_built_in_rag_metrics(
+        eval_mode="system_one",
+        system_one_model=mock_model,
+    )
+    for m in mock_metrics.values():
+        assert m.system_one_model is mock_model
+
 
 def test_make_manufacturing_jev_eval_metric():
     metric = make_manufacturing_jev_eval_metric(system_one_model=PINNED_JEV_MODEL)
@@ -133,12 +150,20 @@ def test_make_manufacturing_jev_eval_metric():
     assert len(metric.questions) == 5
     assert metric.threshold == 0.70
 
+    mock_model = MockDeterministicSystemOneModel(model_name="jev-1.13.0")
+    metric_mock = make_manufacturing_jev_eval_metric(system_one_model=mock_model)
+    assert metric_mock.system_one_model is mock_model
+
 
 def test_make_contradiction_jev_eval_metric():
     metric = make_contradiction_jev_eval_metric(system_one_model=PINNED_JEV_MODEL)
     assert isinstance(metric, JevEval)
     assert metric.name == "Contradiction Handling"
     assert len(metric.questions) == 2
+
+    mock_model = MockDeterministicSystemOneModel(model_name="jev-1.13.0")
+    metric_mock = make_contradiction_jev_eval_metric(system_one_model=mock_model)
+    assert metric_mock.system_one_model is mock_model
 
 
 def test_evaluate_test_case_with_deepeval_mock_pass():
