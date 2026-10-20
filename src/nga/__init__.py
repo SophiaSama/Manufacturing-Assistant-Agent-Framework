@@ -1,5 +1,6 @@
 """Northgate Assembly Plant (NGA) Manufacturing Assistant Agent Framework."""
 
+import nga.config  # noqa: F401 - loads .env and disables telemetry before third-party imports
 from nga.tracing import (
     attach_token_telemetry,
     attach_trace_metadata,

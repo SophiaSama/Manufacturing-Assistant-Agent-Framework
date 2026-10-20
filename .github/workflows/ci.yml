@@ -32,6 +32,10 @@ jobs:
       EMBEDDING_MODEL: openai/text-embedding-3-small
       EMBEDDING_STRATEGY: sequential
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      ANONYMIZED_TELEMETRY: "False"
+      DEEPEVAL_TELEMETRY_OPT_OUT: "YES"
+      ORT_LOGGING_LEVEL: "3"
+      PYTHONWARNINGS: "ignore::langchain_core._api.deprecation.LangChainPendingDeprecationWarning"
 
     steps:
       - name: Checkout repository
