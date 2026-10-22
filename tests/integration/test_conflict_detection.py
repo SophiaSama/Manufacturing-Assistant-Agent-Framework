@@ -146,28 +146,39 @@ def test_conflict_detection(scenario, conflict_agent_graph):
     }
 
     question_parts: list[str] = []
-    for update in agent_graph.stream(
-        initial_state,
-        config={"configurable": {"thread_id": thread_id}},
-        stream_mode="updates",
-    ):
-        if not isinstance(update, dict):
-            continue
-        synthesis = update.get("synthesis") or {}
-        final_dict = synthesis.get("final_answer")
-        if final_dict:
-            try:
-                final = FinalAnswer.model_validate(final_dict)
-                answer = render_final_answer(final)
-            except Exception:
-                pass
-        if not answer:
-            msgs = synthesis.get("messages") or []
-            if msgs:
-                last = msgs[-1]
-                raw = getattr(last, "content", "") or ""
-                if raw and question_parts:
-                    answer = render_final_answer(parse_final_answer(raw, question_parts))
+    try:
+        for update in agent_graph.stream(
+            initial_state,
+            config={"configurable": {"thread_id": thread_id}},
+            stream_mode="updates",
+        ):
+            if not isinstance(update, dict):
+                continue
+            synthesis = update.get("synthesis") or {}
+            final_dict = synthesis.get("final_answer")
+            if final_dict:
+                try:
+                    final = FinalAnswer.model_validate(final_dict)
+                    answer = render_final_answer(final)
+                except Exception:
+                    pass
+            if not answer:
+                msgs = synthesis.get("messages") or []
+                if msgs:
+                    last = msgs[-1]
+                    raw = getattr(last, "content", "") or ""
+                    if raw and question_parts:
+                        answer = render_final_answer(parse_final_answer(raw, question_parts))
+    except Exception as exc:
+        err_msg = str(exc)
+        if (
+            "AuthenticationError" in type(exc).__name__
+            or "401" in err_msg
+            or "User not found" in err_msg
+            or "APIConnectionError" in type(exc).__name__
+        ):
+            pytest.skip(f"Live LLM provider unavailable or unauthenticated: {exc}")
+        raise
 
     print(
         f"\n[{scenario['id']}] {scenario['description']}\n"

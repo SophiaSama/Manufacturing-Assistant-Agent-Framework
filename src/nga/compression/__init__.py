@@ -1,6 +1,9 @@
-"""Headroom context compression and session storage package."""
+"""Headroom context compression and session storage package.
 
-from nga.compression.manager import (
+Re-exports from enterprise_agent.compression for backward compatibility.
+"""
+
+from enterprise_agent.compression.manager import (
     HeadroomManager,
     SessionRawContentStore,
 )

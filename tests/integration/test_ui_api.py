@@ -53,6 +53,20 @@ def test_get_roles(client):
     assert "manager" in role_ids
 
 
+def test_get_domain_bootstrap(client):
+    response = client.get("/api/domain/bootstrap")
+    assert response.status_code == 200
+    data = response.json()
+    assert "name" in data
+    assert "display_name" in data
+    assert "metrics" in data
+    metric_ids = [m["id"] for m in data["metrics"]]
+    assert "faithfulness" in metric_ids
+    assert "domain_quality" in metric_ids
+    assert data["eval_engine"] == "deepeval"
+
+
+
 def test_get_status(client):
     response = client.get("/api/status")
     assert response.status_code == 200

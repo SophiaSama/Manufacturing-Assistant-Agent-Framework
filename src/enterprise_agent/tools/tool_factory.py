@@ -1,4 +1,4 @@
-"""Generic LangChain tool factory for SQL and hybrid retrieval."""
+"""Generic LangChain tool factory for SQL, hybrid retrieval, and Headroom compression."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ def make_generic_sql_tool(
     tool_name: str = "query_database",
     tool_description: str | None = None,
     cache: Any | None = None,
+    headroom_mgr: Any | None = None,
+    session_id: str = "default",
 ):
     """Create a LangChain read-only SQL tool using a generic DatabaseAdapter."""
     schema_desc = db_adapter.describe_schema()
@@ -37,17 +39,20 @@ def make_generic_sql_tool(
             return json.dumps(result, default=str)
 
         if cache is not None:
-            from nga.cache.layers import cached_run_query
-            return cached_run_query(
+            from enterprise_agent.cache.layers import cached_run_query
+            raw = cached_run_query(
                 _run,
                 sql=sql,
                 db_path=getattr(db_adapter, "db_path", "db"),
                 cache=cache,
             )
+        else:
+            raw = _run()
 
-        return _run()
+        if headroom_mgr is not None:
+            return headroom_mgr.compress_tool_output(tool_name, raw, session_id=session_id)
+        return raw
 
-    # Override description dynamically
     sql_tool_func.description = description
     return sql_tool_func
 
@@ -61,8 +66,10 @@ def make_generic_retrieval_tool(
     retrieve_docs_fn: Any = None,
     retrieve_graph_fn: Any = None,
     cache: Any | None = None,
+    headroom_mgr: Any | None = None,
+    session_id: str = "default",
 ):
-    """Create a hybrid document retrieval tool with RBAC enforcement."""
+    """Create a hybrid document retrieval tool with RBAC enforcement and optional compression."""
     cfg = doc_config or DocumentConfig()
     tool_name = cfg.tool_name or "search_documents"
 
@@ -136,7 +143,31 @@ def make_generic_retrieval_tool(
             if graph_ev:
                 payload["graph_evidence"] = graph_ev
 
-        return json.dumps(payload, default=str)
+        payload_str = json.dumps(payload, default=str)
+        if headroom_mgr is not None:
+            return headroom_mgr.compress_tool_output(tool_name, payload_str, session_id=session_id)
+        return payload_str
 
     retrieval_tool_func.description = description
     return retrieval_tool_func
+
+
+def make_headroom_retrieve_tool(
+    headroom_mgr: Any,
+    session_id: str = "default",
+):
+    """Create tool allowing the agent to fetch verbatim uncompressed evidence by hash."""
+
+    @tool
+    def retrieve_uncompressed_evidence(content_hash: str) -> str:
+        """Retrieve original verbatim uncompressed text using a Headroom content hash.
+
+        Use this tool when you need exact numerical tolerances, strict safety compliance clauses,
+        or full procedure steps for critical decisions that may be referenced with [hash=...].
+        """
+        raw = headroom_mgr.store.get(session_id, content_hash)
+        if raw is not None:
+            return raw
+        return f"Error: No uncompressed content found for hash '{content_hash}' in session '{session_id}'."
+
+    return retrieve_uncompressed_evidence

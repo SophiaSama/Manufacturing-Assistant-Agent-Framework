@@ -1,37 +1,32 @@
-"""NGA cache module — SQLite-backed, env-namespaced, RBAC-scoped caching.
-
-Public API:
-    NgaCache, cache_scope, get_active_cache
-    CachedEmbeddings, cached_retrieve, cached_graph_evidence, cached_run_query
-    compute_corpus_version, get_corpus_version, get_db_etag
-    make_cache_from_settings
-
-Design: docs/cache-design.md
-"""
+"""NGA cache module — backward-compatibility shims re-exporting from enterprise_agent.cache."""
 
 from __future__ import annotations
 
-from nga.cache.context import (
-    NgaCache,
-    cache_scope,
-    get_active_cache,
-    get_active_env,
-)
-from nga.cache.keys import canonical_sql, canonical_text, make_key
-from nga.cache.layers import (
+from enterprise_agent.cache import (
     CachedEmbeddings,
+    CacheMetrics,
+    EnterpriseCache,
+    NgaCache,
+    SqliteCacheStore,
+    cache_scope,
     cached_graph_evidence,
     cached_retrieve,
     cached_run_query,
+    canonical_json,
+    canonical_sql,
+    canonical_text,
     compute_corpus_version,
+    get_active_cache,
+    get_active_env,
     get_corpus_version,
     get_db_etag,
+    make_cache_from_settings,
+    make_key,
 )
-from nga.cache.metrics import CacheMetrics
-from nga.cache.store import SqliteCacheStore
 
 __all__ = [
     "NgaCache",
+    "EnterpriseCache",
     "cache_scope",
     "get_active_cache",
     "get_active_env",
@@ -44,23 +39,9 @@ __all__ = [
     "get_db_etag",
     "canonical_sql",
     "canonical_text",
+    "canonical_json",
     "make_key",
     "CacheMetrics",
     "SqliteCacheStore",
+    "make_cache_from_settings",
 ]
-
-
-def make_cache_from_settings(
-    settings: object,
-    *,
-    env: str = "prod",
-) -> NgaCache | None:
-    """Build an NgaCache from Settings, or None when caching is disabled."""
-    if not getattr(settings, "cache_enabled", False):
-        return None
-    db_path = (
-        getattr(settings, "cache_eval_db_path", "data/cache/eval_cache.db")
-        if env == "eval"
-        else getattr(settings, "cache_db_path", "data/cache/nga_cache.db")
-    )
-    return NgaCache(db_path, env=env, max_entries=getattr(settings, "cache_max_entries", 100_000))

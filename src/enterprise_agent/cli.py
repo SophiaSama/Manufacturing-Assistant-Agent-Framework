@@ -12,8 +12,8 @@ from enterprise_agent.config.domain_config import DomainConfig
 from enterprise_agent.database.engine import SqliteAdapter
 from enterprise_agent.graph.orchestrator import build_enterprise_agent_graph
 from enterprise_agent.models.answer_schema import render_final_answer
+from enterprise_agent.providers.factory import make_chat_model
 from enterprise_agent.tools.tool_factory import make_generic_sql_tool
-from nga.providers.factory import make_chat_model
 
 logger = logging.getLogger("enterprise_agent.cli")
 

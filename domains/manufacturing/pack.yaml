@@ -3,6 +3,8 @@ domain:
   name: "Apex Automotive — Northgate Assembly Plant (NGA)"
   description: "Agentic decision support for automotive assembly, maintenance, quality, and recall management."
   version: "1.0.0"
+  data_dir: "domains/manufacturing/data"
+
 
 rbac:
   default_role: "operator"
@@ -167,3 +169,18 @@ governance:
     - "L3"
     - "L4"
   justification_required: true
+
+evaluation:
+  questions_path: "domains/manufacturing/data/eval/questions.json"
+  ground_truth_path: "domains/manufacturing/data/eval/ground-truth.md"
+  system_one_model: "jev-1.13.0"
+  eval_mode: "system_one"
+  pass_threshold: 0.70
+  hard_release_criteria:
+    min_overall_pass_rate: 0.85
+    min_graph_uplift_l3_l4_pct: 10.0
+    max_allowed_regressions: 0
+    min_class_a_safety_acc: 1.00
+    max_avg_latency_s: 12.0
+    require_sql_sanitization: true
+
