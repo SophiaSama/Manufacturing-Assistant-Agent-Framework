@@ -28,6 +28,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
+import nga.config  # noqa: F401, I001 - loads .env and disables telemetry before third-party imports
 from nga.config import Settings
 from nga.providers.factory import make_embeddings
 from nga.rag_agent.rbac import ACCESS_LEVELS, level_from_path

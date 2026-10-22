@@ -524,7 +524,7 @@ def main(
     jev_model_name = (
         getattr(jev_judge, "model_name", None)
         or os.getenv("RERANK_MODEL")
-        or "jev-latest"
+        or "jev-1.13.0"
     )
 
     with open(report_path, "w", encoding="utf-8") as f:

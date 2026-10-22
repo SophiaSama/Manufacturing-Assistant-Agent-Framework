@@ -307,14 +307,30 @@ Validates that every citation produced in an agent's answer is grounded in real 
 - **Grounding Score**: Produces composite grounding scores and integrates them into CI evaluation reports.
 
 ### 2. TypeSafe AI Jev Judge vs. Classical LLM Judge (`src/nga/evaluation/judge.py`)
-- **TypeSafe AI Jev Judge**: Powered by `typesafe-ai/jev`, evaluating responses using non-generative System One calibrated scoring. Delivers sub-50ms evaluation latency with deterministic, reproducible scores and zero token generation cost.
+- **TypeSafe AI Jev Judge**: Powered by `typesafe-ai/jev`, evaluating responses using non-generative System One calibrated scoring. Delivers sub-50ms evaluation latency with deterministic, reproducible scores and zero token generation cost. Pinned to `jev-1.13.0` for consistent baselines.
 - **Classical LLM Judge**: Evaluates answer accuracy and completeness via generative text prompting.
 - **Full-Suite Comparison**: Run the 85-question benchmark comparison script:
   ```bash
   uv run python scripts/full_suite_judge_comparison.py
   ```
 
-### 3. The Four Enterprise Evaluation Dashboards
+### 3. DeepEval RAG & Custom `JevEval` Harness (`src/nga/evaluation/deepeval_metrics.py`)
+The platform integrates **DeepEval (`>=4.3.1`)** with **TypeSafe Jev (`jev-1.13.0`)** as the judge for standard RAG metrics and manufacturing quality criteria:
+- **Built-in RAG Metrics**: `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualPrecisionMetric`, and `ContextualRecallMetric` evaluated by Jev.
+- **Manufacturing Quality `JevEval`**: Single-call 5-dimensional evaluation assessing 6-level manufacturing rubric (`Score`), numerical tolerance accuracy (`Noul`), evidence grounding (`Noul`), completeness (`Noul`), and defect mode classification (`Choice`).
+- **Contradiction Handling `JevEval`**: Evaluates cross-document contradiction handling with automatic non-contradiction dropout.
+- **OpenTelemetry Tracing**: Each evaluation emits a `deepeval.evaluate_test_case` OpenTelemetry span with per-criterion scores, latency, tokens, cost, and confidence.
+- **Side-by-Side Comparison Runner**: Run the legacy Jev harness and DeepEval harness side-by-side to inspect per-criterion verdict agreement:
+  ```bash
+  # Pure System One mode (100% Jev-only, zero LLM calls, default)
+  uv run python scripts/side_by_side_eval.py --limit 6
+
+  # Opt-in Hybrid mode (LLM claim extraction + reasons, Jev verdicts)
+  uv run python scripts/side_by_side_eval.py --eval-mode hybrid --limit 6
+  ```
+  See [`docs/2026-10-18-deepeval-migration-design.md`](docs/2026-10-18-deepeval-migration-design.md) for full architecture and evaluation details.
+
+### 4. The Four Enterprise Evaluation Dashboards
 - **Dashboard 1: Graph Quality Metrics**: Quantitative ingestion-time monitoring for Knowledge Graphs: Entity Extraction F1, Relation Accuracy, Entity Alignment Success Rate, and Knowledge Coverage Rate against gold ground-truth facts.
 - **Dashboard 2: Stepped Evaluation Suite**: Stratifies benchmark questions across 4 difficulty tiers: L1 (Single-Hop Fact) → L2 (Two-Hop Relation) → L3 (Three-Hop Cross-Doc) → L4 (Multi-Domain Challenge) with reasoning degradation slope analysis.
 - **Dashboard 3: A/B Testing & Release Gates**: Validates candidate runs against pure vector baselines with **6 Hard Release Criteria** (Pass Rate $\ge 85\%$, L3/L4 Uplift $\ge +10\%$, zero regressions, 100% Class A recall, $\le 12\text{s}$ latency ceiling, SQL injection safe).

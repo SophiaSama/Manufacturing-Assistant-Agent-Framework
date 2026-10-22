@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import threading
 import uuid
+import weakref
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,14 +15,111 @@ from typing import Any
 logger = logging.getLogger("nga.memory.headroom")
 
 
+class _BackgroundLoopRunner:
+    """Manages a dedicated background thread with an active asyncio event loop.
+
+    Keeps the headroom memory and its internal httpx clients on a single persistent
+    event loop, avoiding event loop recreation across sync invocations.
+    """
+
+    def __init__(self) -> None:
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
+
+    def ensure_running(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            if self._loop is None or self._loop.is_closed():
+                self._loop = asyncio.new_event_loop()
+                ready = threading.Event()
+                loop = self._loop
+
+                def _target() -> None:
+                    asyncio.set_event_loop(loop)
+                    ready.set()
+                    try:
+                        loop.run_forever()
+                    finally:
+                        try:
+                            tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
+                            for t in tasks:
+                                t.cancel()
+                            if tasks:
+                                loop.run_until_complete(
+                                    asyncio.gather(*tasks, return_exceptions=True)
+                                )
+                        except Exception:
+                            pass
+                        try:
+                            loop.close()
+                        except Exception:
+                            pass
+
+                self._thread = threading.Thread(target=_target, daemon=True, name="headroom-memory-loop")
+                self._thread.start()
+                ready.wait()
+            return self._loop
+
+    def run(self, coro: Any, timeout: float = 30.0) -> Any:
+        loop = self.ensure_running()
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        try:
+            return future.result(timeout=timeout)
+        except Exception:
+            future.cancel()
+            raise
+
+    def close(self, timeout: float = 5.0) -> None:
+        with self._lock:
+            loop = self._loop
+            thread = self._thread
+            self._loop = None
+            self._thread = None
+
+            if loop is not None and loop.is_running():
+                def _stop() -> None:
+                    loop.stop()
+
+                loop.call_soon_threadsafe(_stop)
+                if thread is not None and threading.current_thread() != thread:
+                    thread.join(timeout=timeout)
+
+    async def aclose(self, timeout: float = 5.0) -> None:
+        """Asynchronously shut down the background runner thread and loop."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self.close, timeout)
+
+
 class NgaEpisodicMemory:
     """Manages semantic memory indexing for plant incidents, resolutions, and operator notes."""
+
+    _instances: weakref.WeakSet[NgaEpisodicMemory] = weakref.WeakSet()
+    _instances_lock = threading.Lock()
 
     def __init__(self, db_path: str = "data/headroom_memory.db"):
         self.db_path = db_path
         self._memory = None
         self._headroom_available = True
+        self._closed = False
+        self._is_closing = False
+        self._close_lock = threading.Lock()
+        self._closing_done = threading.Event()
+        self._runner: _BackgroundLoopRunner | None = _BackgroundLoopRunner()
+        with self._instances_lock:
+            self._instances.add(self)
         self._init_sqlite_fallback()
+
+    @classmethod
+    def close_all(cls) -> None:
+        """Close all active episodic memory instances across the process."""
+        with cls._instances_lock:
+            instances = list(cls._instances)
+            cls._instances.clear()
+        for inst in instances:
+            try:
+                inst.close()
+            except Exception:
+                pass
 
     def _init_sqlite_fallback(self) -> None:
         try:
@@ -59,21 +158,125 @@ class NgaEpisodicMemory:
                 return None
         return self._memory
 
-    def _run_coroutine(self, coro):
-        """Execute an async coroutine from sync context safely without deprecation warnings."""
+    def _run_coroutine(self, coro: Any) -> Any:
+        """Execute an async coroutine on the dedicated background loop."""
+        if self._closed or self._is_closing or self._runner is None:
+            return None
         try:
+            return self._runner.run(coro)
+        except Exception as exc:
+            logger.warning("coroutine_execution_failed err=%s", exc)
+            return None
+
+    async def aclose(self) -> None:
+        """Asynchronously close headroom memory and release all underlying clients and threads."""
+        with self._close_lock:
+            if self._closed:
+                return
+            if self._is_closing:
+                already_closing = True
+            else:
+                self._is_closing = True
+                already_closing = False
+                mem = self._memory
+                self._memory = None
+                runner = self._runner
+                self._runner = None
+
+        if already_closing:
             try:
                 loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
+                await loop.run_in_executor(None, self._closing_done.wait, 5.0)
+            except Exception:
+                pass
+            return
 
-            if loop and loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    return pool.submit(asyncio.run, coro).result()
-            return asyncio.run(coro)
+        try:
+            if mem is not None and runner is not None:
+                runner_loop = runner.ensure_running()
+                try:
+                    curr_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    curr_loop = None
+
+                if hasattr(mem, "close"):
+                    try:
+                        import inspect
+
+                        res = mem.close()
+                        if inspect.isawaitable(res):
+                            if curr_loop is runner_loop:
+                                await res
+                            else:
+                                fut = asyncio.run_coroutine_threadsafe(res, runner_loop)
+                                await asyncio.wrap_future(fut)
+                    except Exception as exc:
+                        logger.warning("failed_to_close_headroom_memory err=%s", exc)
+
+            if runner is not None:
+                await runner.aclose()
+        finally:
+            with self._close_lock:
+                self._closed = True
+                self._is_closing = False
+            self._closing_done.set()
+
+    def close(self) -> None:
+        """Synchronously close headroom memory and release all underlying clients and threads."""
+        with self._close_lock:
+            if self._closed:
+                return
+            if self._is_closing:
+                already_closing = True
+            else:
+                self._is_closing = True
+                already_closing = False
+                mem = self._memory
+                self._memory = None
+                runner = self._runner
+                self._runner = None
+
+        if already_closing:
+            self._closing_done.wait(timeout=5.0)
+            return
+
+        try:
+            if mem is not None and runner is not None:
+                if hasattr(mem, "close"):
+                    try:
+                        import inspect
+
+                        res = mem.close()
+                        if inspect.isawaitable(res):
+                            runner.run(res, timeout=5.0)
+                    except Exception as exc:
+                        logger.warning("error_closing_headroom_memory_runner err=%s", exc)
+
+            if runner is not None:
+                runner.close()
+        finally:
+            with self._close_lock:
+                self._closed = True
+                self._is_closing = False
+            self._closing_done.set()
+
+    def __enter__(self) -> NgaEpisodicMemory:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
+
+    async def __aenter__(self) -> NgaEpisodicMemory:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
         except Exception:
-            return None
+            pass
 
     def _fallback_save(
         self,
@@ -128,7 +331,7 @@ class NgaEpisodicMemory:
             logger.warning("sqlite_fallback_search_failed err=%s", exc)
             return []
 
-    async def recall_similar_incidents_async(
+    async def _recall_similar_incidents_impl(
         self, query: str, user_id: str = "operator", top_k: int = 3
     ) -> list[dict[str, Any]]:
         mem = self._get_memory()
@@ -149,6 +352,27 @@ class NgaEpisodicMemory:
 
         return self._fallback_search(query=query, user_id=user_id, top_k=top_k)
 
+    async def recall_similar_incidents_async(
+        self, query: str, user_id: str = "operator", top_k: int = 3
+    ) -> list[dict[str, Any]]:
+        if self._closed or self._is_closing or self._runner is None:
+            return self._fallback_search(query=query, user_id=user_id, top_k=top_k)
+
+        runner_loop = self._runner.ensure_running()
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+
+        if curr_loop is runner_loop:
+            return await self._recall_similar_incidents_impl(query, user_id=user_id, top_k=top_k)
+
+        fut = asyncio.run_coroutine_threadsafe(
+            self._recall_similar_incidents_impl(query, user_id=user_id, top_k=top_k),
+            runner_loop,
+        )
+        return await asyncio.wrap_future(fut)
+
     def recall_similar_incidents(
         self, query: str, user_id: str = "operator", top_k: int = 3
     ) -> list[dict[str, Any]]:
@@ -157,7 +381,7 @@ class NgaEpisodicMemory:
         )
         return res if res is not None else self._fallback_search(query=query, user_id=user_id, top_k=top_k)
 
-    async def record_approved_decision_async(
+    async def _record_approved_decision_impl(
         self,
         question: str,
         recommendation: str,
@@ -199,6 +423,50 @@ class NgaEpisodicMemory:
             class_a_alert=class_a_alert,
             approver=approver,
         )
+
+    async def record_approved_decision_async(
+        self,
+        question: str,
+        recommendation: str,
+        category: str,
+        class_a_alert: bool,
+        approver: str | None,
+        user_id: str = "operator",
+    ) -> str | None:
+        if self._closed or self._is_closing or self._runner is None:
+            entry = (
+                f"Incident: {question}\n"
+                f"Resolution: {recommendation}\n"
+                f"Category: {category}\n"
+                f"Class A: {class_a_alert}\n"
+                f"Approved By: {approver or 'System'}"
+            )
+            return self._fallback_save(
+                content=entry,
+                user_id=user_id,
+                category=category,
+                class_a_alert=class_a_alert,
+                approver=approver,
+            )
+
+        runner_loop = self._runner.ensure_running()
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+
+        if curr_loop is runner_loop:
+            return await self._record_approved_decision_impl(
+                question, recommendation, category, class_a_alert, approver, user_id
+            )
+
+        fut = asyncio.run_coroutine_threadsafe(
+            self._record_approved_decision_impl(
+                question, recommendation, category, class_a_alert, approver, user_id
+            ),
+            runner_loop,
+        )
+        return await asyncio.wrap_future(fut)
 
     def record_approved_decision(
         self,

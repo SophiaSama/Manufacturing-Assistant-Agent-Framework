@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,37 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
+
+# Completely disable ChromaDB product telemetry and silence telemetry loggers
+try:
+    import chromadb.telemetry.product.posthog as _chroma_posthog
+
+    _chroma_posthog.Posthog.capture = lambda self, event: None
+except ImportError:
+    pass
+
+try:
+    import posthog
+
+    posthog.disabled = True
+    _orig_posthog_capture = posthog.capture
+
+    def _safe_posthog_capture(*args, **kwargs):
+        if getattr(posthog, "disabled", False):
+            return None
+        if len(args) == 3:
+            return _orig_posthog_capture(
+                args[1], distinct_id=args[0], properties=args[2], **kwargs
+            )
+        return _orig_posthog_capture(*args, **kwargs)
+
+    posthog.capture = _safe_posthog_capture
+except ImportError:
+    pass
+
+logging.getLogger("posthog").setLevel(logging.CRITICAL)
+logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
 
 _VALID_ENVIRONMENTS = {"local": "Local", "cloud": "Cloud"}
 

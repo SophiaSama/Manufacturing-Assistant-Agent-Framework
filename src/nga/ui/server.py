@@ -19,6 +19,7 @@ from langchain_chroma import Chroma
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
+import nga.config  # noqa: F401, I001 - loads .env and disables telemetry before third-party imports
 from nga.cache import CachedEmbeddings, make_cache_from_settings
 from nga.config import Settings
 from nga.evaluation.baseline_eval import run_baseline_ab_analysis

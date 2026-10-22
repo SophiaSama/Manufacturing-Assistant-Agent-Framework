@@ -6,10 +6,48 @@ import os
 
 import pytest
 
+import nga.config  # noqa: F401 - loads .env and disables telemetry before test suites run
+
 # Mock HITL approval to auto-approve for all integration tests
 import nga.hitl.approval as approval_module
 
 approval_module.request_approval = lambda *a, **kw: ("approved", None)
+
+
+@pytest.fixture(autouse=True)
+def cleanup_async_resources():
+    """Ensure async resources like active chat models and headroom memory are cleaned up."""
+    yield
+    try:
+        from nga.memory.headroom_memory import NgaEpisodicMemory
+
+        NgaEpisodicMemory.close_all()
+    except Exception:
+        pass
+
+    try:
+        from nga.providers.factory import close_active_chat_models
+
+        close_active_chat_models()
+    except Exception:
+        pass
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Clean up any lingering async clients or background threads at pytest session end."""
+    try:
+        from nga.memory.headroom_memory import NgaEpisodicMemory
+
+        NgaEpisodicMemory.close_all()
+    except Exception:
+        pass
+
+    try:
+        from nga.providers.factory import close_active_chat_models
+
+        close_active_chat_models()
+    except Exception:
+        pass
 
 
 def pytest_addoption(parser):
