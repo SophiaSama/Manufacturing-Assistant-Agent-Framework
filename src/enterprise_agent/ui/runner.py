@@ -1,19 +1,25 @@
-"""CLI launcher for the NGA Manufacturing Assistant Web Interface."""
+"""CLI launcher for the Enterprise Agent Web Interface."""
 
 from __future__ import annotations
 
 import argparse
 import logging
+import os
 import webbrowser
 
 import uvicorn
 
-logger = logging.getLogger("nga.ui.runner")
+logger = logging.getLogger("enterprise_agent.ui.runner")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="NGA Manufacturing Assistant Web Interface Server."
+        description="Enterprise Agent Web Interface Server."
+    )
+    parser.add_argument(
+        "--domain",
+        default="domains/manufacturing/pack.yaml",
+        help="Path to domain pack YAML (default: domains/manufacturing/pack.yaml)",
     )
     parser.add_argument(
         "--host",
@@ -44,13 +50,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
 
+    if args.domain:
+        os.environ["DOMAIN_PACK"] = args.domain
+
     print("=" * 66)
-    print("  🚀 NGA Manufacturing Assistant — Web User Interface")
+    print("  🚀 Enterprise Agent — Decision Support Web User Interface")
     print("=" * 66)
     print(f"  URL        : http://{args.host}:{args.port}")
-    print("  Clearance  : Multi-Role RBAC (Operator, Technician, Engineer, Manager)")
-    print("  Safety     : Class A Defect Detection & ESC-402 / QCR-501 HITL")
-    print("  Evaluation : Live Benchmark Runner & Model Comparison Studio")
+    print(f"  Domain Pack: {args.domain}")
+    print("  Clearance  : Multi-Role RBAC Clearance Gate")
+    print("  Safety     : Critical Decision Gate & HITL Workflow")
+    print("  Evaluation : Live Benchmark Runner & DeepEval Evaluation Studio")
     print("=" * 66)
     print()
 
@@ -58,7 +68,7 @@ def main(argv: list[str] | None = None) -> None:
         webbrowser.open(f"http://{args.host}:{args.port}")
 
     uvicorn.run(
-        "nga.ui.server:app",
+        "enterprise_agent.ui.server:app",
         host=args.host,
         port=args.port,
         reload=args.reload,

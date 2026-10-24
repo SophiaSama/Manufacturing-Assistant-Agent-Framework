@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import uuid
 from collections import deque
@@ -54,6 +55,19 @@ ACCESS_LEVELS: dict[str, int] = {
     "engineer": 3,
     "manager": 4,
 }
+
+
+def resolve_domain_pack_path(domain_pack: str | None = None) -> Path:
+    """Resolve active domain pack path from argument, DOMAIN_PACK env, or default."""
+    pack_val = domain_pack or os.environ.get("DOMAIN_PACK") or "domains/manufacturing/pack.yaml"
+    p = Path(pack_val)
+    if p.is_file():
+        return p
+    if (Path("domains") / pack_val / "pack.yaml").is_file():
+        return Path("domains") / pack_val / "pack.yaml"
+    if pack_val in ("banking", "banking_aml"):
+        return Path("domains/banking/pack.yaml")
+    return Path("domains/manufacturing/pack.yaml")
 
 
 def _get_eval_runner() -> Any:
@@ -201,17 +215,28 @@ class AppContext:
         self.sql_tool: Any = None
         self.agent_graphs: dict[str, Any] = {}
         self.initialized: bool = False
-
+        self.active_domain_pack: str | None = None
+        self.domain_config: Any | None = None
 
     def setup(self) -> None:
         if self.initialized:
             return
+
+        pack_path = resolve_domain_pack_path()
+        self.active_domain_pack = str(pack_path)
 
         try:
             from nga.config import Settings
             self.settings = Settings.from_env()
         except ImportError:
             self.settings = None
+
+        try:
+            from enterprise_agent.config.domain_config import DomainConfig
+            if pack_path.exists():
+                self.domain_config = DomainConfig.from_yaml_file(pack_path)
+        except Exception as exc:
+            logger.warning("DomainConfig init warning: %s", exc)
 
         if self.settings:
             configure_tracing(self.settings)
@@ -228,6 +253,73 @@ class AppContext:
                         self.embeddings, cache=self.cache,
                         model_id=self.settings.embedding_model,
                     )
+            except Exception as exc:
+                logger.warning("Embeddings init warning: %s", exc)
+
+            self.checkpointer = build_checkpointer(self.settings.app_state_db_path)
+
+        # Non-manufacturing domain graph setup
+        if self.domain_config and "manufacturing" not in self.domain_config.domain.id:
+            try:
+                from enterprise_agent.database.engine import SqliteAdapter
+                from enterprise_agent.graph.orchestrator import (
+                    build_enterprise_agent_graph,
+                )
+                from enterprise_agent.providers.factory import make_chat_model
+                from enterprise_agent.rag.retrieval import (
+                    build_or_open_vector_store,
+                    make_generic_retrieval_tool,
+                )
+                from enterprise_agent.tools.tool_factory import make_generic_sql_tool
+
+                adapter = None
+                sql_tool = None
+                schema_desc = ""
+                if self.domain_config.database and self.domain_config.database.connection_uri:
+                    db_path = Path(self.domain_config.database.connection_uri).resolve()
+                    adapter = SqliteAdapter(db_path, allowed_tables=self.domain_config.database.allowed_tables)
+                    sql_tool = make_generic_sql_tool(
+                        adapter,
+                        tool_name=self.domain_config.database.tool_name,
+                        tool_description=self.domain_config.database.tool_description,
+                        cache=getattr(self, "cache", None),
+                    )
+                    schema_desc = adapter.describe_schema()
+                self.sql_tool = sql_tool
+
+                v_store = build_or_open_vector_store(
+                    domain_config=self.domain_config,
+                    documents_dir=self.domain_config.domain.data_dir,
+                    embeddings=self.embeddings,
+                )
+                self.vector_store = v_store
+
+                chat_model = make_chat_model(self.settings) if self.settings else None
+
+                for role_name in self.domain_config.rbac.roles:
+                    access_lvl = self.domain_config.rbac.get_rank(role_name)
+                    retrieval_tool = make_generic_retrieval_tool(
+                        v_store,
+                        user_level=access_lvl,
+                        doc_config=self.domain_config.documents,
+                        cache=getattr(self, "cache", None),
+                    )
+                    tools = [t for t in [sql_tool, retrieval_tool] if t is not None]
+                    if chat_model is not None:
+                        self.agent_graphs[role_name] = build_enterprise_agent_graph(
+                            domain_config=self.domain_config,
+                            chat_model=chat_model,
+                            tools=tools,
+                            schema_summary=schema_desc,
+                            checkpointer=self.checkpointer,
+                            approver=_server_approver,
+                            app_state_db_path=self.settings.app_state_db_path if self.settings else None,
+                        )
+            except Exception as exc:
+                logger.warning("Generic domain graph setup warning: %s", exc)
+        elif self.settings:
+            # Manufacturing domain graph setup (NGA backward compatibility)
+            try:
                 from nga.ingestion.build_vector_store import open_vector_store
                 self.vector_store = open_vector_store(
                     self.settings, embeddings=self.embeddings,
@@ -241,11 +333,9 @@ class AppContext:
             except Exception as exc:
                 logger.warning("Graph data init warning: %s", exc)
 
-            self.checkpointer = build_checkpointer(self.settings.app_state_db_path)
-
             try:
                 from nga.tools.tool_factory import make_sql_tool
-                self.sql_tool = make_sql_tool(self.settings.nga_db_path, cache=self.cache)
+                self.sql_tool = make_sql_tool(self.settings.nga_db_path, cache=getattr(self, "cache", None))
             except Exception as exc:
                 logger.warning("SQL tool init warning: %s", exc)
 
@@ -260,7 +350,7 @@ class AppContext:
                             graph=self.graph_data,
                             embeddings=self.embeddings,
                             user_level=access_lvl,
-                            cache=self.cache,
+                            cache=getattr(self, "cache", None),
                         )
                     else:
                         retrieval_tool = None
@@ -276,13 +366,19 @@ class AppContext:
         self.initialized = True
         logger.info("UI backend setup complete. Available roles: %s", list(self.agent_graphs.keys()))
 
-
     def get_graph(self, role: str) -> Any:
+        pack_path = resolve_domain_pack_path()
+        if getattr(self, "active_domain_pack", None) != str(pack_path):
+            self.initialized = False
+            self.agent_graphs.clear()
         self.setup()
         role_norm = role.lower().strip()
-        if role_norm not in self.agent_graphs:
-            role_norm = "operator"
-        return self.agent_graphs.get(role_norm)
+        if role_norm in self.agent_graphs:
+            return self.agent_graphs[role_norm]
+        default_role = "operator"
+        if getattr(self, "domain_config", None):
+            default_role = self.domain_config.rbac.default_role
+        return self.agent_graphs.get(role_norm, self.agent_graphs.get(default_role))
 
 
 def _server_approver(recommendation_summary: str, **kwargs) -> tuple[str, str | None]:
@@ -343,7 +439,7 @@ def create_app() -> FastAPI:
     @app.get("/api/domain/bootstrap")
     def get_domain_bootstrap() -> dict[str, Any]:
         """Bootstrap endpoint supplying domain branding, active domain, roles, and DeepEval configuration."""
-        pack_path = Path("domains/manufacturing/pack.yaml")
+        pack_path = resolve_domain_pack_path()
         pack_data: dict[str, Any] = {}
         if pack_path.exists():
             try:
@@ -355,9 +451,12 @@ def create_app() -> FastAPI:
 
         domain_meta = pack_data.get("domain", {})
         rbac_data = pack_data.get("rbac", {})
+        eval_data = pack_data.get("evaluation", {})
+        domain_id = domain_meta.get("id", "manufacturing")
+
         return {
-            "id": domain_meta.get("id", "manufacturing"),
-            "name": domain_meta.get("id", "manufacturing"),
+            "id": domain_id,
+            "name": domain_id,
             "display_name": domain_meta.get("name", "Northgate Assembly Plant"),
             "description": domain_meta.get("description", "Automotive manufacturing operations & quality assurance"),
             "version": domain_meta.get("version", "1.0.0"),
@@ -374,6 +473,7 @@ def create_app() -> FastAPI:
             ],
             "roles": rbac_data.get("roles", {}),
             "default_role": rbac_data.get("default_role", "operator"),
+            "evaluation": eval_data,
         }
 
 
@@ -382,55 +482,89 @@ def create_app() -> FastAPI:
 
     @app.get("/api/roles")
     def get_roles() -> dict[str, Any]:
-        role_descriptions = {
-            "operator": {
-                "title": "Assembly Line Operator",
-                "level": 1,
-                "description": "Standard Operating Procedures (SOP-OPR-*), assembly steps, and torque specifications.",
-                "allowed_domains": ["operator-sops/"],
-                "can_evaluate_recalls": False,
-                "can_perform_rca": False,
-            },
-            "technician": {
-                "title": "Maintenance Technician",
-                "level": 2,
-                "description": "Troubleshooting procedures (SOP-TEC-*), machine specifications, calibrations, and work orders.",
-                "allowed_domains": ["operator-sops/", "technician-sops/", "machine-details/", "additional-docs/maintenance-work-orders/"],
-                "can_evaluate_recalls": False,
-                "can_perform_rca": False,
-            },
-            "engineer": {
-                "title": "Process / Quality Engineer",
-                "level": 3,
-                "description": "Root-cause analysis (8D / FAP-401), non-conformance records, supplier quality, and training records.",
-                "allowed_domains": ["operator-sops/", "technician-sops/", "machine-details/", "failure-analysis/", "additional-docs/supplier-quality/", "additional-docs/training/"],
-                "can_evaluate_recalls": False,
-                "can_perform_rca": True,
-            },
-            "manager": {
-                "title": "Plant Manager / Quality Director",
-                "level": 4,
-                "description": "Full access: Recall criteria (QCR-501 C1–C5), Stop-Ship authorization, NRSA regulatory compliance, and field actions.",
-                "allowed_domains": ["* (All Documents & Records)"],
-                "can_evaluate_recalls": True,
-                "can_perform_rca": True,
-            },
-        }
-        return {
-            "roles": [
-                {
-                    "id": k,
-                    "name": k.capitalize(),
-                    "title": v["title"],
-                    "level": v["level"],
-                    "description": v["description"],
-                    "allowed_domains": v["allowed_domains"],
-                    "can_evaluate_recalls": v["can_evaluate_recalls"],
-                    "can_perform_rca": v["can_perform_rca"],
-                }
-                for k, v in role_descriptions.items()
-            ]
-        }
+        pack_path = resolve_domain_pack_path()
+        domain_id = ""
+        pack_data: dict[str, Any] = {}
+        if pack_path.exists():
+            try:
+                import yaml
+                with open(pack_path, encoding="utf-8") as f:
+                    pack_data = yaml.safe_load(f) or {}
+                domain_id = pack_data.get("domain", {}).get("id", "")
+            except Exception:
+                pass
+
+        if not domain_id or "manufacturing" in domain_id:
+            role_descriptions = {
+                "operator": {
+                    "title": "Assembly Line Operator",
+                    "level": 1,
+                    "description": "Standard Operating Procedures (SOP-OPR-*), assembly steps, and torque specifications.",
+                    "allowed_domains": ["operator-sops/"],
+                    "can_evaluate_recalls": False,
+                    "can_perform_rca": False,
+                },
+                "technician": {
+                    "title": "Maintenance Technician",
+                    "level": 2,
+                    "description": "Troubleshooting procedures (SOP-TEC-*), machine specifications, calibrations, and work orders.",
+                    "allowed_domains": ["operator-sops/", "technician-sops/", "machine-details/", "additional-docs/maintenance-work-orders/"],
+                    "can_evaluate_recalls": False,
+                    "can_perform_rca": False,
+                },
+                "engineer": {
+                    "title": "Process / Quality Engineer",
+                    "level": 3,
+                    "description": "Root-cause analysis (8D / FAP-401), non-conformance records, supplier quality, and training records.",
+                    "allowed_domains": ["operator-sops/", "technician-sops/", "machine-details/", "failure-analysis/", "additional-docs/supplier-quality/", "additional-docs/training/"],
+                    "can_evaluate_recalls": False,
+                    "can_perform_rca": True,
+                },
+                "manager": {
+                    "title": "Plant Manager / Quality Director",
+                    "level": 4,
+                    "description": "Full access: Recall criteria (QCR-501 C1–C5), Stop-Ship authorization, NRSA regulatory compliance, and field actions.",
+                    "allowed_domains": ["* (All Documents & Records)"],
+                    "can_evaluate_recalls": True,
+                    "can_perform_rca": True,
+                },
+            }
+            return {
+                "roles": [
+                    {
+                        "id": k,
+                        "name": k.capitalize(),
+                        "title": v["title"],
+                        "level": v["level"],
+                        "description": v["description"],
+                        "allowed_domains": v["allowed_domains"],
+                        "can_evaluate_recalls": v["can_evaluate_recalls"],
+                        "can_perform_rca": v["can_perform_rca"],
+                    }
+                    for k, v in role_descriptions.items()
+                ]
+            }
+
+        rbac_data = pack_data.get("rbac", {})
+        roles_dict = rbac_data.get("roles", {})
+        role_prompts = rbac_data.get("role_prompts", {})
+
+        dynamic_roles = []
+        for role_id, rank in roles_dict.items():
+            level = int(rank) if isinstance(rank, (int, str)) and str(rank).isdigit() else 1
+            prompt_desc = role_prompts.get(role_id, "").strip()
+            title = " ".join(word.capitalize() for word in role_id.split("_"))
+            dynamic_roles.append({
+                "id": role_id,
+                "name": title,
+                "title": title,
+                "level": level,
+                "description": prompt_desc or f"Access clearance level {level} for {role_id}.",
+                "allowed_domains": [f"level-{level}-records/"],
+                "can_evaluate_recalls": level >= 4,
+                "can_perform_rca": level >= 3,
+            })
+        return {"roles": dynamic_roles}
 
     # ── Status & Health ───────────────────────────────────────────────────────
 
@@ -475,6 +609,16 @@ def create_app() -> FastAPI:
             except Exception:
                 pass
 
+        pack_path = resolve_domain_pack_path()
+        domain_cfg = None
+        if pack_path.exists():
+            try:
+                from enterprise_agent.config.domain_config import DomainConfig
+                domain_cfg = DomainConfig.from_yaml_file(pack_path)
+            except Exception:
+                domain_cfg = None
+        roles_avail = list(domain_cfg.rbac.roles.keys()) if domain_cfg else list(ACCESS_LEVELS.keys())
+
         return {
             "status": "online",
             "environment": settings.execution_environment if settings else "Unknown",
@@ -493,16 +637,31 @@ def create_app() -> FastAPI:
                 "total": total_decisions,
                 "pending": pending_decisions,
             },
-            "roles_available": list(ACCESS_LEVELS.keys()),
+            "roles_available": roles_avail,
         }
 
     # ── Chat Execution Endpoint ───────────────────────────────────────────────
 
     @app.post("/api/chat")
     def run_chat(request: ChatRequest) -> dict[str, Any]:
+        pack_path = resolve_domain_pack_path()
+        domain_cfg = None
+        if pack_path.exists():
+            try:
+                from enterprise_agent.config.domain_config import DomainConfig
+                domain_cfg = DomainConfig.from_yaml_file(pack_path)
+            except Exception:
+                domain_cfg = None
+
         role = request.role.lower().strip()
-        if role not in ACCESS_LEVELS:
-            role = "operator"
+        if domain_cfg is not None:
+            if role not in domain_cfg.rbac.roles:
+                role = domain_cfg.rbac.default_role
+            user_level = domain_cfg.rbac.get_rank(role)
+        else:
+            if role not in ACCESS_LEVELS:
+                role = "operator"
+            user_level = ACCESS_LEVELS.get(role, 1)
 
         graph = ctx.get_graph(role)
         if graph is None:
@@ -512,7 +671,7 @@ def create_app() -> FastAPI:
         initial_state = {
             "messages": [HumanMessage(content=request.message)],
             "user_role": role,
-            "user_level": ACCESS_LEVELS.get(role, 1),
+            "user_level": user_level,
             "thread_id": thread_id,
         }
 
@@ -661,7 +820,7 @@ def create_app() -> FastAPI:
         return {
             "thread_id": thread_id,
             "role": role,
-            "user_level": ACCESS_LEVELS.get(role, 1),
+            "user_level": user_level,
             "rendered_answer": rendered_answer,
             "final_answer": final_answer_obj.model_dump(),
             "trace_steps": trace_steps,

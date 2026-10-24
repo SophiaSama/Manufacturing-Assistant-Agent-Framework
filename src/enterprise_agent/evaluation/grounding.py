@@ -161,7 +161,7 @@ def evaluate_citation_existence(
             invalid_chunks.append(cid)
         else:
             # Extract doc_id prefix and check against manifest
-            doc_prefix = cid.rsplit(":c", 1)[0]
+            doc_prefix = cid.split(":c", 1)[0]
             if doc_prefix not in corpus_manifest:
                 invalid_chunks.append(cid)
 

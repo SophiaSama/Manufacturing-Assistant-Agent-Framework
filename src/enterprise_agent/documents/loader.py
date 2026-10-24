@@ -10,6 +10,7 @@ import abc
 import csv
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -203,6 +204,7 @@ class DocumentIngestionPipeline:
         metadata: dict[str, Any] = {
             "source": str(file_path),
             "doc_id": doc_id,
+            "doc_name": file_path.name,
             "category": category,
             "level_rank": level_rank,
             "file_name": file_path.name,
@@ -213,7 +215,13 @@ class DocumentIngestionPipeline:
         return [
             Document(
                 page_content=chunk,
-                metadata={**metadata, "chunk_index": i},
+                metadata={
+                    **metadata,
+                    "chunk_index": i,
+                    "chunk_id": f"{doc_id}:c{i}:can",
+                    "corpus_source": "canonical",
+                    "text": chunk,
+                },
             )
             for i, chunk in enumerate(chunks)
         ]
@@ -221,7 +229,12 @@ class DocumentIngestionPipeline:
     def load_directory(self, root_dir: Path) -> list[Document]:
         """Recursively load and chunk all supported documents in a directory."""
         documents: list[Document] = []
-        for path in sorted(root_dir.rglob("*")):
+        all_paths: list[Path] = []
+        for root, _dirs, files in os.walk(str(root_dir), followlinks=True):
+            for file in files:
+                all_paths.append(Path(root) / file)
+
+        for path in sorted(all_paths):
             if not path.is_file():
                 continue
             if path.name in self.doc_config.excluded_files:

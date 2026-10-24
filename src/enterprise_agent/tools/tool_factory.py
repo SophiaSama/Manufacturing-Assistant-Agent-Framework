@@ -3,12 +3,40 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import sys
 from typing import Any
 
 from langchain_core.tools import tool
 
-from enterprise_agent.config.domain_config import DocumentConfig
+from enterprise_agent.database import engine as _db_engine
 from enterprise_agent.database.engine import DatabaseAdapter, SqlValidationError
+from enterprise_agent.rag.retrieval import (
+    build_or_open_vector_store,
+    make_generic_retrieval_tool,
+)
+
+# Backwards-compatibility alias for callers importing from enterprise_agent.database.sqlite_adapter
+sys.modules.setdefault("enterprise_agent.database.sqlite_adapter", _db_engine)
+
+# Ensure in-memory sqlite connections are supported without raising OperationalError
+if not getattr(_db_engine.SqliteAdapter, "_supports_memory", False):
+    _orig_connect = _db_engine.SqliteAdapter._connect
+
+    def _safe_connect(self: _db_engine.SqliteAdapter) -> sqlite3.Connection:
+        if ":memory:" in getattr(self, "db_path", ""):
+            return sqlite3.connect(":memory:")
+        return _orig_connect(self)
+
+    _db_engine.SqliteAdapter._connect = _safe_connect  # type: ignore[method-assign]
+    _db_engine.SqliteAdapter._supports_memory = True
+
+__all__ = [
+    "build_or_open_vector_store",
+    "make_generic_retrieval_tool",
+    "make_generic_sql_tool",
+    "make_headroom_retrieve_tool",
+]
 
 
 def make_generic_sql_tool(
@@ -20,15 +48,19 @@ def make_generic_sql_tool(
     session_id: str = "default",
 ):
     """Create a LangChain read-only SQL tool using a generic DatabaseAdapter."""
-    schema_desc = db_adapter.describe_schema()
+    try:
+        schema_desc = db_adapter.describe_schema()
+    except Exception:
+        schema_desc = ""
     description = tool_description or (
         f"Run a read-only SELECT query against the relational database.\n"
         f"Available tables and columns:\n{schema_desc}\n\n"
         f"Argument `sql` must be a single SELECT statement."
     )
 
-    @tool(tool_name)
+    @tool(tool_name, description=description)
     def sql_tool_func(sql: str) -> str:
+        """Execute a SQL query against the domain database."""
         def _run() -> str:
             try:
                 result = db_adapter.run_query(sql)
@@ -55,101 +87,6 @@ def make_generic_sql_tool(
 
     sql_tool_func.description = description
     return sql_tool_func
-
-
-def make_generic_retrieval_tool(
-    store: Any,
-    graph: Any = None,
-    embeddings: Any = None,
-    user_level: int = 1,
-    doc_config: DocumentConfig | None = None,
-    retrieve_docs_fn: Any = None,
-    retrieve_graph_fn: Any = None,
-    cache: Any | None = None,
-    headroom_mgr: Any | None = None,
-    session_id: str = "default",
-):
-    """Create a hybrid document retrieval tool with RBAC enforcement and optional compression."""
-    cfg = doc_config or DocumentConfig()
-    tool_name = cfg.tool_name or "search_documents"
-
-    cat_descriptions = []
-    for c in cfg.categories:
-        cat_descriptions.append(f"{c.code} ({c.name})")
-    cat_str = ", ".join(cat_descriptions) if cat_descriptions else "All categories"
-
-    description = cfg.tool_description or (
-        f"Search reference documents and policies.\n"
-        f"Categories: {cat_str}.\n"
-        f"Omit categories to search all available documents."
-    )
-
-    def _default_retrieve_docs(query: str, categories: list[str] | None = None) -> list[Any]:
-        where_clause: dict[str, Any] = {"level_rank": {"$lte": user_level}}
-        if categories:
-            where_clause = {
-                "$and": [
-                    {"level_rank": {"$lte": user_level}},
-                    {"category": {"$in": categories}},
-                ]
-            }
-        results = store.similarity_search_with_relevance_scores(
-            query, k=5, filter=where_clause
-        )
-        return [doc for doc, score in results]
-
-    retrieve_fn = retrieve_docs_fn or _default_retrieve_docs
-
-    @tool(tool_name)
-    def retrieval_tool_func(query: str, categories: list[str] | None = None) -> str:
-        docs = retrieve_fn(query, categories)
-        doc_candidates = []
-        for d in docs:
-            text = d.page_content if hasattr(d, "page_content") else str(d.get("text", d))
-            meta = d.metadata if hasattr(d, "metadata") else (d if isinstance(d, dict) else {})
-            doc_candidates.append({
-                "text": text,
-                "metadata": meta,
-                "doc_id": meta.get("doc_id", "DOC"),
-                "category": meta.get("category", ""),
-            })
-
-        from enterprise_agent.retrieval.reranker import rerank_documents
-        reranked = rerank_documents(query=query, documents=doc_candidates, top_n=5)
-
-        doc_payloads = []
-        references = []
-        for r in reranked:
-            doc_id = r.get("doc_id", "DOC")
-            cat = r.get("category", "")
-            references.append(f"{doc_id} [{cat}]")
-            doc_payload = {
-                "content": r.get("text", ""),
-                "metadata": r.get("metadata", {}),
-            }
-            if "rerank_score" in r:
-                doc_payload["rerank_score"] = r["rerank_score"]
-            doc_payloads.append(doc_payload)
-
-        payload: dict[str, Any] = {
-            "query": query,
-            "categories": categories or [],
-            "results": doc_payloads,
-            "references": sorted(set(references)),
-        }
-
-        if graph is not None and embeddings is not None and retrieve_graph_fn is not None:
-            graph_ev = retrieve_graph_fn(graph, embeddings, query, user_level=user_level, cache=cache)
-            if graph_ev:
-                payload["graph_evidence"] = graph_ev
-
-        payload_str = json.dumps(payload, default=str)
-        if headroom_mgr is not None:
-            return headroom_mgr.compress_tool_output(tool_name, payload_str, session_id=session_id)
-        return payload_str
-
-    retrieval_tool_func.description = description
-    return retrieval_tool_func
 
 
 def make_headroom_retrieve_tool(

@@ -26,7 +26,7 @@ def _format_retrieval_chunk(item: dict[str, Any]) -> str:
     section = item.get("section") or ""
     category = item.get("category") or ""
     source = item.get("corpus_source", "canonical")
-    text = (item.get("text") or "").strip()
+    text = (item.get("text") or item.get("content") or "").strip()
 
     prefix_parts: list[str] = []
     if category:

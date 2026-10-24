@@ -9,8 +9,21 @@
 The **Enterprise Agentic Decision Support Framework** is an extensible, production-grade, role-aware agentic platform engineered for mission-critical industrial decision support. It decouples high-assurance AI governance, deterministic retrieval-grounding, and state-machine orchestration from any single business vertical via **Declarative Domain Packs**.
 
 The repository contains:
-1. **Generic Enterprise Agent Engine (`src/enterprise_agent/`)**: Domain-agnostic orchestration, multi-format document ingestion (Markdown, JSON, CSV, TXT), AST-validated read-only text-to-SQL execution via SQLGlot, System One semantic reranking via TypeSafe AI Jev (`Choice` primitive), and policy-driven Human-in-the-Loop (HITL) gates.
-2. **Flagship Domain: NGA Manufacturing Assistant (`src/nga/`)**: A specialized automotive manufacturing assistant tailored for the synthetic **Apex Automotive — Northgate Assembly Plant (NGA)**, enforcing 4-tier Role-Based Access Control (RBAC), safety-critical Class A defect containment, recall triggers (QCR-501), dual-path hybrid retrieval (ChromaDB vector search + NetworkX GraphRAG), and **Headroom context compression with episodic semantic memory**.
+1. **Generic Enterprise Agent Engine (`src/enterprise_agent/`)**: The canonical domain-agnostic library comprising:
+   - `config`: Declarative domain pack configuration, schema validation, and evaluation criteria (`DomainConfig`).
+   - `database`: SQLite engine with AST-validated read-only text-to-SQL execution via SQLGlot (`SqliteAdapter`).
+   - `documents`: Multi-format document ingestion pipeline (`DocumentIngestionPipeline`) parsing Markdown, JSON, CSV, and Plain Text with path-based RBAC clearance tagging.
+   - `rag`: Vector store ingestion and generic retrieval tools (`make_generic_retrieval_tool`).
+   - `retrieval` / `models`: System One semantic reranking via TypeSafe AI Jev (`Choice` primitive) and structured answer models.
+   - `tools`: Dynamic tool factory for SQL and document retrieval (`make_generic_sql_tool`, `make_generic_retrieval_tool`).
+   - `graph`: Domain-adaptive LangGraph state machine orchestration and HITL policy gates (`build_enterprise_agent_graph`).
+   - `cache`: SQLite-backed multi-tier caching (`EnterpriseCache`, `CachedEmbeddings`, `cached_run_query`, `cached_retrieve`).
+   - `compression`: Headroom context compression and session raw store.
+   - `evaluation`: Deterministic grounding verification (`grounding.py`), DeepEval adapter (`deepeval_adapter.py`), custom domain metrics (`deepeval_metrics.py`), TypeSafe Jev judge (`judge.py`), side-by-side benchmarking (`side_by_side.py`), and CI trend tracking.
+   - `memory`: Episodic semantic memory, decision logs, and SQLite checkpointers.
+   - `tracing`: OpenTelemetry tracing instrumentation.
+   - `ui`: Domain-adaptive FastAPI server and web dashboard.
+2. **Flagship Domain: NGA Manufacturing Assistant (`src/nga/`)**: Specialized automotive manufacturing assistant tailored for the synthetic **Apex Automotive — Northgate Assembly Plant (NGA)**, maintaining **backward-compatibility shims** that re-export canonical `enterprise_agent` components alongside manufacturing-specific GraphRAG builders, assets, and seed database (`nga.db`).
 3. **Banking Domain Pack (`domains/banking/`)**: A financial crime and AML/sanctions compliance decision support pack demonstrating domain portability across banking policies, SAR filings, and OFAC watchlists.
 4. **Deterministic Evaluation & Grounding Suite**: 4-tier stepped benchmark suites (85 questions), quantitative Graph Quality metrics, A/B release gates, multi-model Pareto arena, citation existence & retrieval provenance verification, **TypeSafe AI Jev** calibrated System One scoring, and **Headroom multi-hop long reasoning chain benchmarks**.
 
@@ -114,10 +127,10 @@ To enhance retrieval precision beyond pure dense vector embeddings, the framewor
 
 Industrial manufacturing workflows frequently trigger multi-hop reasoning chains involving verbose database tables (e.g., hundreds of torque records across assembly shifts) and extensive standard operating procedures. Unchecked, raw context rapidly exhausts LLM context windows, inflates latency, and degrades reasoning precision.
 
-The framework integrates **Headroom AI (`headroom-ai`)** using an explicit node-level context optimization pattern (**Approach B**) coupled with episodic semantic memory (`src/nga/compression/` and `src/nga/memory/`):
+The framework integrates **Headroom AI (`headroom-ai`)** using an explicit node-level context optimization pattern (**Approach B**) coupled with episodic semantic memory (`src/enterprise_agent/compression/` and `src/enterprise_agent/memory/`, with `src/nga/` backward-compatibility shims):
 
 ### 1. Dual-Scope Context Compression
-- **Tool Payload Compression**: When tools (`query_nga_database`, `search_sop_documents`) return outputs exceeding the threshold (`min_tokens=250`), Headroom compresses the textual payload targeting ratio $r=0.7$ (a conservative 30% reduction calibrated to protect technical parameters, part numbers, and error codes).
+- **Tool Payload Compression**: When tools (`query_nga_database`, `query_banking_database`, `search_sop_documents`) return outputs exceeding the threshold (`min_tokens=250`), Headroom compresses the textual payload targeting ratio $r=0.7$ (a conservative 30% reduction calibrated to protect technical parameters, part numbers, and error codes).
 - **Multi-Turn History Compression**: Prior to invoking the System Two LLM in `agent_node`, prior conversation turns are compressed with `protect_recent=2`, preserving immediate operational context while eliminating context bloat from earlier turns.
 - **Session-Scoped In-Memory Raw Store**: Uncompressed payloads are cached strictly in-memory per session (`SessionRawContentStore`) with LRU eviction and zero cross-tenant leakage.
 
@@ -128,7 +141,7 @@ In high-precision manufacturing, rounding errors or missed tolerances are unacce
 - If the agent evaluates a safety-critical **Class A defect** or requires exact verification before a stop-ship recommendation, it retrieves the original text byte-for-byte from the in-memory store.
 
 ### 3. Cache Coexistence & Layer Architecture
-Headroom operates strictly downstream of NGA's multi-tier input/execution cache (`src/nga/cache`):
+Headroom operates strictly downstream of the multi-tier input/execution cache (`src/enterprise_agent/cache/`, re-exported via `src/nga/cache`):
 - **L0 (Embedding), L1 (Retrieval), and L2 (SQL)** caches in `data/cache.db` prevent redundant searches and expensive database operations.
 - **Headroom** optimizes the prompt payload size passed into the LLM context window.
 - Invalidation of `data/cache.db` does not disrupt session-scoped Headroom hashes, and Headroom respects all RBAC level isolation.
@@ -218,34 +231,42 @@ uv run python domains/banking/init_db.py
 ```
 
 ### 5. Launch the Web User Interface (Recommended)
-Launch the manufacturing operations dashboard:
+Launch the domain-adaptive operations dashboard with any vertical domain pack:
 ```bash
+# Launch with Banking AML domain pack via CLI argument
+uv run python -m enterprise_agent.ui.runner --domain domains/banking/pack.yaml --port 8000 --host 127.0.0.1 --open-browser
+
+# Or launch with Banking AML domain pack via environment variable
+DOMAIN_PACK=domains/banking/pack.yaml uv run python -m enterprise_agent.ui.runner --port 8000 --host 127.0.0.1 --open-browser
+
+# Launch with Flagship Automotive Manufacturing domain pack
+uv run python -m enterprise_agent.ui.runner --domain domains/manufacturing/pack.yaml --port 8000 --host 127.0.0.1 --open-browser
+
+# Legacy NGA backward-compatibility runner
 uv run python -m nga.ui.runner --port 8000 --host 127.0.0.1 --open-browser
 ```
 Access `http://127.0.0.1:8000` to interact with:
-- **Role Switching**: Toggle between Operator (L1), Technician (L2), Engineer (L3), and Plant Manager (L4).
-- **Structured Answers**: Class A hazard banners, ESC-402 escalation levels, QCR-501 recall triggers, and verified citations.
-- **HIL Approval Queue**: Review, authorize, or reject safety-critical actions.
-- **Real-Time Execution Logs**: Inspect the LangGraph state trace and SQL queries.
+- **Dynamic Domain Branding & Role Switching**: Automatically adapts to the active domain pack (e.g. Teller, Compliance Analyst, Risk Manager, Chief Risk Officer for Banking; Operator, Technician, Engineer, Plant Manager for Manufacturing).
+- **Structured Answers**: Class A hazard banners, compliance alerts, escalation tiers, recall triggers, and verified citations.
+- **HITL Governance Queue**: Review, authorize, or reject high-consequence operational or compliance actions.
+- **Real-Time Execution Logs**: Inspect the LangGraph state trace, SQL queries, and tool payloads.
 - **Evaluation Dashboards**: Run and compare benchmark suites live.
 
 ### 6. Interactive CLI
-Run the NGA manufacturing CLI:
+Run the Generic Enterprise CLI with any vertical domain pack:
 ```bash
-uv run python -m nga.cli --role operator
-```
+# Banking AML domain
+uv run python -m enterprise_agent.cli --domain domains/banking/pack.yaml --role compliance_analyst
 
-Run the Generic Enterprise CLI with any domain pack:
-```bash
 # Automotive manufacturing domain
 uv run python -m enterprise_agent.cli --domain domains/manufacturing/pack.yaml --role operator
 
-# Banking AML domain
-uv run python -m enterprise_agent.cli --domain domains/banking/pack.yaml --role compliance_analyst
+# Legacy NGA manufacturing CLI wrapper
+uv run python -m nga.cli --role operator
 ```
 
 ### 7. OpenTelemetry Tracing & Observability
-The framework uses **OpenTelemetry** (`src/nga/tracing.py`) to trace orchestrator nodes, System 1 Jev evaluations, tool executions, and token/cost telemetry (`openinference.span.kind` and `gen_ai.usage.*` semantic attributes). See [`docs/opentelemetry-tracing.md`](docs/opentelemetry-tracing.md) for full details.
+The framework uses **OpenTelemetry** (`src/enterprise_agent/tracing.py`, with `src/nga/tracing.py` backward-compatibility shim) to trace orchestrator nodes, System 1 Jev evaluations, tool executions, and token/cost telemetry (`openinference.span.kind` and `gen_ai.usage.*` semantic attributes). See [`docs/opentelemetry-tracing.md`](docs/opentelemetry-tracing.md) for full details.
 
 #### Configuring the Trace Provider (`.env`)
 | Variable | Default | Description |
@@ -271,6 +292,218 @@ The framework uses **OpenTelemetry** (`src/nga/tracing.py`) to trace orchestrato
    The right-hand **⚡ Execution Trace** panel at `http://127.0.0.1:8000` displays per-node execution steps and tool outputs in real time without requiring an external collector.
 4. **Terminal (`OTEL_TRACES_EXPORTER=console`):**
    Prints structured OpenTelemetry span payloads directly to `stdout`.
+
+---
+
+## 📖 Developer Guide: Onboarding & Deploying a New Vertical RAG Domain Pack
+
+The Enterprise Agentic Framework decouples domain logic, data models, RBAC rules, document ingestion, and evaluation gates from the core engine. Adding a new vertical domain (such as Healthcare, Legal, Energy, or Supply Chain) requires **zero core code modifications**. Follow this step-by-step guide to build, deploy, and evaluate a new domain pack.
+
+### Step 1: Create the Domain Directory Layout
+Create a dedicated folder under `domains/<domain_name>/`:
+```
+domains/<domain_name>/
+├── pack.yaml                 # Master declarative domain manifest & security policy
+├── init_db.py                # (Optional) Database initialization & seed script
+└── data/                     # Domain documentation, database, and benchmarks
+    ├── <domain>.db           # SQLite database
+    ├── policies/             # Level 1 public/standard policy documents (.md, .txt)
+    ├── procedures/           # Level 2 standard operating procedures (.md)
+    ├── specifications/       # Level 3 technical specs & schemas (.json, .csv)
+    ├── confidential/         # Level 4 executive & regulatory documents (.md)
+    └── eval/                 # Evaluation dataset & gold-standard ground truth
+        ├── questions.json    # Benchmark evaluation question suite
+        └── ground-truth.md   # Ground truth reference text
+```
+
+### Step 2: Configure `pack.yaml`
+The `pack.yaml` file defines all declarative behavior across 6 modular sections:
+
+```yaml
+# 1. Domain Metadata
+domain:
+  id: "healthcare_phi"
+  name: "Apex Health — Clinical Decision Support & Compliance"
+  description: "Decision support assistant for HIPAA compliance, clinical protocols, and pharmacy orders."
+  version: "1.0.0"
+  data_dir: "domains/healthcare/data"
+
+# 2. RBAC Policy & Clearance Hierarchy (Ranks 1 to 4)
+rbac:
+  default_role: "nurse"
+  roles:
+    nurse: 1              # Rank 1: Standard operating procedures, nursing care plans
+    pharmacist: 2         # Rank 2: Formulary specs, drug interaction databases
+    physician: 3          # Rank 3: Full patient histories, clinical trial specs
+    chief_medical_officer: 4 # Rank 4: Hospital-wide policy, confidential mortality reviews
+  role_prompts:
+    nurse: "You are a clinical nursing assistant. Help with standard care plans and medication lookups."
+    physician: "You are an attending physician assistant. Provide comprehensive clinical synthesis with citations."
+  path_level_rules:
+    - pattern: "policies"
+      min_rank: 1
+    - pattern: "procedures"
+      min_rank: 2
+    - pattern: "specifications"
+      min_rank: 3
+    - pattern: "confidential"
+      min_rank: 4
+
+# 3. Read-Only Structured Database Configuration
+database:
+  dialect: "sqlite"
+  connection_uri: "domains/healthcare/data/healthcare.db"
+  tool_name: "query_clinical_database"
+  tool_description: "Run read-only SELECT queries on patients, orders, and medications."
+  allowed_tables:
+    - patients
+    - orders
+    - medications
+    - formulary
+
+# 4. Multi-Format Document Ingestion Rules
+documents:
+  tool_name: "search_clinical_documents"
+  tool_description: "Search clinical protocols, drug matrices, and hospital policies."
+  supported_extensions:
+    - ".md"
+    - ".json"
+    - ".csv"
+    - ".txt"
+  categories:
+    - code: "POL"
+      name: "Hospital Policies"
+      folder_patterns: ["policies"]
+    - code: "SOP"
+      name: "Standard Clinical Procedures"
+      folder_patterns: ["procedures"]
+    - code: "DRUG"
+      name: "Pharmaceutical Formularies"
+      folder_patterns: ["specifications"]
+  id_patterns:
+    - "(POL-\\d+)"
+    - "(SOP-\\d+)"
+    - "(DRUG-\\d+)"
+
+# 5. Human-in-the-Loop (HITL) Governance & Policy Gates
+governance:
+  hitl_action_verbs:
+    - "override medication"
+    - "discharge critical"
+    - "quarantine unit"
+    - "escalate morbidity"
+  critical_terms:
+    - "adverse drug event"
+    - "code blue"
+    - "anaphylaxis"
+  escalation_levels:
+    - "Tier 1 — Charge Nurse Review"
+    - "Tier 2 — Attending Physician Authorization"
+    - "Tier 3 — Chief Medical Officer Authorization"
+  justification_required: true
+
+# 6. Evaluation & Hard Release Gates
+evaluation:
+  questions_path: "domains/healthcare/data/eval/questions.json"
+  ground_truth_path: "domains/healthcare/data/eval/ground-truth.md"
+  system_one_model: "jev-1.13.0"
+  eval_mode: "system_one"
+  pass_threshold: 0.70
+  hard_release_criteria:
+    min_overall_pass_rate: 0.85
+    min_graph_uplift_l3_l4_pct: 0.0
+    max_allowed_regressions: 0
+    min_class_a_safety_acc: 1.0
+    max_avg_latency_s: 10.0
+    require_sql_sanitization: true
+```
+
+### Step 3: Ingest Documents via `DocumentIngestionPipeline`
+Use the generic `DocumentIngestionPipeline` to process multi-format domain files, assign RBAC clearance ranks, and generate canonical chunk metadata:
+
+```python
+from pathlib import Path
+from enterprise_agent.config.domain_config import DomainConfig
+from enterprise_agent.documents.loader import DocumentIngestionPipeline
+
+# 1. Load configuration
+config = DomainConfig.from_yaml_file("domains/healthcare/pack.yaml")
+
+# 2. Instantiate pipeline with declarative rules
+pipeline = DocumentIngestionPipeline(
+    doc_config=config.documents,
+    rbac_config=config.rbac,
+)
+
+# 3. Load and parse directory (Markdown, JSON, CSV, TXT)
+data_dir = Path(config.domain.data_dir).resolve()
+documents = pipeline.load_directory(data_dir)
+
+# Each document chunk contains standardized metadata:
+# - chunk_id: "{doc_id}:c{i}:can" (e.g. "POL-101:c0:can")
+# - corpus_source: "canonical"
+# - category: "POL"
+# - level_rank: 1..4
+# - text: "..."
+```
+
+### Step 4: Launch via CLI and Web UI
+Launch the application targeting your new domain pack using either CLI arguments or the `DOMAIN_PACK` environment variable:
+
+```bash
+# Launch interactive CLI for a specific role
+uv run python -m enterprise_agent.cli --domain domains/healthcare/pack.yaml --role physician
+
+# Launch Web UI via CLI argument
+uv run python -m enterprise_agent.ui.runner --domain domains/healthcare/pack.yaml --port 8000 --open-browser
+
+# Launch Web UI via environment variable
+DOMAIN_PACK=domains/healthcare/pack.yaml uv run python -m enterprise_agent.ui.runner --port 8000 --open-browser
+```
+
+The Web UI dynamically bootstraps via `/api/domain/bootstrap` and `/api/roles`, automatically rendering the domain's display title, custom role tabs (with ranks 1–4), and domain-specific tool endpoints.
+
+### Step 5: Run Vertical Integration Tests & Grounding Evaluation
+Verify that your domain pack complies with framework contracts for RBAC filtering, LangGraph orchestration, deterministic grounding, and DeepEval scoring:
+
+```python
+# 1. Deterministic Grounding Evaluation
+from enterprise_agent.evaluation.grounding import evaluate_grounding
+
+grounding_result = evaluate_grounding(
+    answer_text=agent_answer,
+    evidence=evidence_list,
+    tool_outputs=live_tool_outputs,
+    corpus_manifest=corpus_manifest, # set of valid doc_ids
+    question_id="Q-HEALTH-001",
+)
+assert grounding_result.citation_validity_score == 1.0 # Zero fabricated citations
+assert grounding_result.provenance_score == 1.0        # All cited docs retrieved
+
+# 2. DeepEval Test Case Extraction & Jev Scoring
+from enterprise_agent.evaluation.deepeval_adapter import to_deep_eval_test_case
+from enterprise_agent.evaluation.deepeval_metrics import (
+    make_domain_jev_eval_metric,
+    evaluate_test_case_with_deepeval,
+)
+
+test_case = to_deep_eval_test_case(
+    question_data=question_row,
+    actual_output=agent_answer,
+    tool_outputs=live_tool_outputs,
+    tools_called=["search_clinical_documents", "query_clinical_database"],
+)
+domain_metric = make_domain_jev_eval_metric(
+    threshold=config.evaluation.pass_threshold,
+    system_one_model="jev-1.13.0",
+)
+eval_result = evaluate_test_case_with_deepeval(test_case, custom_metrics=[domain_metric])
+```
+
+Run the automated integration test suite across your domain packs:
+```bash
+uv run pytest tests/integration/test_vertical_domain_portability.py tests/integration/test_generic_rag_grounding_and_deepeval.py tests/integration/test_manufacturing_domain_pack_parity.py -v
+```
 
 ---
 
@@ -300,24 +533,24 @@ The platform features an evaluation architecture combining automated regression 
                                        └──────────────────────────────┘
 ```
 
-### 1. Deterministic Retrieval-Grounding Auditing (`src/nga/evaluation/grounding.py`)
-Validates that every citation produced in an agent's answer is grounded in real documents and actual retrieval tool results:
+### 1. Deterministic Retrieval-Grounding Auditing (`src/enterprise_agent/evaluation/grounding.py`)
+Validates that every citation produced in an agent's answer is grounded in real documents and actual retrieval tool results (re-exported via `src/nga/evaluation/grounding.py`):
 - **Tier 1 — Citation Existence**: Audits cited document IDs and chunk IDs against the corpus manifest (`build_corpus_manifest`). Detects and flags any fabricated or hallucinated document IDs.
 - **Tier 2 — Retrieval Provenance**: Verifies that cited documents were genuinely retrieved by tool calls during the execution trajectory, eliminating orphan citations.
 - **Grounding Score**: Produces composite grounding scores and integrates them into CI evaluation reports.
 
-### 2. TypeSafe AI Jev Judge vs. Classical LLM Judge (`src/nga/evaluation/judge.py`)
-- **TypeSafe AI Jev Judge**: Powered by `typesafe-ai/jev`, evaluating responses using non-generative System One calibrated scoring. Delivers sub-50ms evaluation latency with deterministic, reproducible scores and zero token generation cost. Pinned to `jev-1.13.0` for consistent baselines.
+### 2. TypeSafe AI Jev Judge vs. Classical LLM Judge (`src/enterprise_agent/evaluation/judge.py`)
+- **TypeSafe AI Jev Judge**: Powered by `typesafe-ai/jev` (re-exported via `src/nga/evaluation/judge.py`), evaluating responses using non-generative System One calibrated scoring. Delivers sub-50ms evaluation latency with deterministic, reproducible scores and zero token generation cost. Pinned to `jev-1.13.0` for consistent baselines.
 - **Classical LLM Judge**: Evaluates answer accuracy and completeness via generative text prompting.
 - **Full-Suite Comparison**: Run the 85-question benchmark comparison script:
   ```bash
   uv run python scripts/full_suite_judge_comparison.py
   ```
 
-### 3. DeepEval RAG & Custom `JevEval` Harness (`src/nga/evaluation/deepeval_metrics.py`)
-The platform integrates **DeepEval (`>=4.3.1`)** with **TypeSafe Jev (`jev-1.13.0`)** as the judge for standard RAG metrics and manufacturing quality criteria:
+### 3. DeepEval RAG & Custom `JevEval` Harness (`src/enterprise_agent/evaluation/deepeval_metrics.py`)
+The platform integrates **DeepEval (`>=4.3.1`)** with **TypeSafe Jev (`jev-1.13.0`)** as the judge for standard RAG metrics and manufacturing quality criteria (re-exported via `src/nga/evaluation/deepeval_metrics.py`):
 - **Built-in RAG Metrics**: `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualPrecisionMetric`, and `ContextualRecallMetric` evaluated by Jev.
-- **Manufacturing Quality `JevEval`**: Single-call 5-dimensional evaluation assessing 6-level manufacturing rubric (`Score`), numerical tolerance accuracy (`Noul`), evidence grounding (`Noul`), completeness (`Noul`), and defect mode classification (`Choice`).
+- **Domain & Manufacturing Quality `JevEval`**: Single-call 5-dimensional evaluation assessing 6-level rubric (`Score`), numerical tolerance accuracy (`Noul`), evidence grounding (`Noul`), completeness (`Noul`), and defect mode classification (`Choice`).
 - **Contradiction Handling `JevEval`**: Evaluates cross-document contradiction handling with automatic non-contradiction dropout.
 - **OpenTelemetry Tracing**: Each evaluation emits a `deepeval.evaluate_test_case` OpenTelemetry span with per-criterion scores, latency, tokens, cost, and confidence.
 - **Side-by-Side Comparison Runner**: Run the legacy Jev harness and DeepEval harness side-by-side to inspect per-criterion verdict agreement:
@@ -336,14 +569,14 @@ The platform integrates **DeepEval (`>=4.3.1`)** with **TypeSafe Jev (`jev-1.13.
 - **Dashboard 3: A/B Testing & Release Gates**: Validates candidate runs against pure vector baselines with **6 Hard Release Criteria** (Pass Rate $\ge 85\%$, L3/L4 Uplift $\ge +10\%$, zero regressions, 100% Class A recall, $\le 12\text{s}$ latency ceiling, SQL injection safe).
 - **Dashboard 4: Multi-Model Arena**: Side-by-side benchmark comparing Claude 3.5 Sonnet, GPT-4o, Gemini 1.5 Pro/Flash, DeepSeek V3/R1, and Grok-2 on accuracy, latency, token costs, and Pareto efficiency.
 
-### 4. Multi-Tier Caching System (`src/nga/cache/`)
-SQLite-backed multi-tier cache to accelerate iterative development and evaluation:
-- **L0 (Embedding)**: Caches text-to-embedding vector mappings.
-- **L1 (Retrieval)**: Caches query results scoped by categories, $k$, corpus version, and **user RBAC level**.
-- **L2 (SQL)**: Caches validated `SELECT` queries, automatically invalidated by database `data_version` etags.
+### 5. Multi-Tier Caching System (`src/enterprise_agent/cache/`)
+SQLite-backed multi-tier cache to accelerate iterative development and evaluation (re-exported via `src/nga/cache/`):
+- **L0 (Embedding)**: Caches text-to-embedding vector mappings via `CachedEmbeddings`.
+- **L1 (Retrieval)**: Caches query results scoped by categories, $k$, corpus version, and **user RBAC level** via `cached_retrieve`.
+- **L2 (SQL)**: Caches validated `SELECT` queries via `cached_run_query`, automatically invalidated by database `data_version` etags.
 - **Cold vs. Hot Evaluation Modes**: Benchmark against an empty cache (`--cache-mode cold`) or evaluate warm repeated-query throughput (`--cache-mode hot`).
 
-### 5. Token Consumption & Cost Efficiency KPIs (Jev vs. Fallback)
+### 6. Token Consumption & Cost Efficiency KPIs (Jev vs. Fallback)
 Quantifies operational token economics and ROI between **System One Jev acceleration** and **fallback/baseline configurations**:
 - **Token Consumption Efficiency Ratio (TCER)**: $\frac{T_{\text{in}}^{\text{Jev}} + T_{\text{out}}^{\text{Jev}}}{T_{\text{in}}^{\text{Fallback}} + T_{\text{out}}^{\text{Fallback}}}$ ($\le 0.45$ target across multi-hop queries).
 - **Zero Auxiliary Output Tokens**: Jev decisions produce zero output tokens ($T_{\text{out}} = 0$, $100\%$ elimination of decision completion tokens).
@@ -358,13 +591,16 @@ The repository organizes tests into four dedicated subdirectories with clear bou
 | Directory | Scope | Execution | Dependencies |
 | :--- | :--- | :--- | :--- |
 | **`tests/unit/`** | Fast unit tests: caching, routing, grounding, Jev reasoning, reranker, Headroom compression, episodic memory, release gates. | `uv run pytest tests/unit/ -v` | Offline / fully mocked |
-| **`tests/integration/`** | System & integration tests: Web UI REST APIs, multi-turn stress tests, concurrency, and cross-document contradiction detection. | `uv run pytest tests/integration/ -v` | In-memory / SQLite |
+| **`tests/integration/`** | System & integration tests: vertical domain portability, generic RAG grounding & DeepEval contracts, manufacturing parity, Web UI APIs, stress tests. | `uv run pytest tests/integration/ -v` | In-memory / SQLite |
 | **`tests/benchmarks/`** | Stepped evaluation suite, curated benchmark runners, and Headroom multi-hop long reasoning chain benchmarks. | `uv run pytest tests/benchmarks/ -v` | Corpus / vector store |
 | **`tests/fixtures/`** | Benchmark ground truth datasets (`ground-truth.md`), seed configurations, and fixture assets. | Referenced by tests | Static |
 
 ```bash
 # Run all unit tests and long reasoning benchmarks (250+ tests, < 6s)
 uv run pytest tests/unit/ tests/benchmarks/test_long_reasoning_benchmark.py -v
+
+# Run vertical domain portability and evaluation contracts integration tests
+uv run pytest tests/integration/test_vertical_domain_portability.py tests/integration/test_generic_rag_grounding_and_deepeval.py tests/integration/test_manufacturing_domain_pack_parity.py -v
 
 # Run integration tests (UI API, concurrency, stress)
 uv run pytest tests/integration/test_ui_api.py tests/integration/test_stress.py -v
@@ -395,37 +631,45 @@ All evaluation outputs and benchmark runs are structured under `reports/` organi
 
 ```
 .
-├── domains/                          # Declarative Domain Packs
-│   ├── manufacturing/                # Automotive NGA domain pack (pack.yaml)
-│   └── banking/                      # Banking AML & sanctions domain pack (pack.yaml, init_db.py)
+├── domains/                          # Declarative Vertical Domain Packs
+│   ├── manufacturing/                # Automotive NGA domain pack (pack.yaml, data/)
+│   └── banking/                      # Banking AML & sanctions domain pack (pack.yaml, init_db.py, data/)
 ├── src/
-│   ├── enterprise_agent/             # Generic Enterprise Agent Framework
+│   ├── enterprise_agent/             # Canonical Generic Enterprise Agent Framework (Domain-Agnostic)
+│   │   ├── cache/                    # SQLite-backed multi-tier caching (L0/L1/L2)
 │   │   ├── cli.py                    # Multi-domain interactive CLI
-│   │   ├── config/                   # Domain pack YAML loader and validation
-│   │   ├── database/                 # SQLite engine, SQLGlot AST validation
-│   │   ├── documents/                # Multi-format document loader (MD, JSON, CSV, TXT)
-│   │   ├── graph/                    # Domain-agnostic LangGraph state machine & nodes
+│   │   ├── compression/              # Headroom context compression & session raw store
+│   │   ├── config/                   # Declarative domain pack YAML loader & validation (DomainConfig)
+│   │   ├── database/                 # SQLite engine, SQLGlot AST validation & SqliteAdapter
+│   │   ├── documents/                # Multi-format document ingestion pipeline (MD, JSON, CSV, TXT)
+│   │   ├── evaluation/               # Deterministic grounding, DeepEval metrics, Jev judge, release gates
+│   │   ├── graph/                    # Domain-adaptive LangGraph state machine & HITL nodes
 │   │   ├── hitl/                     # Policy gate & action verb interceptor
-│   │   ├── models/                   # Structured answer schemas & renderer
+│   │   ├── memory/                   # Episodic semantic memory, decision logs, checkpointers
+│   │   ├── models/                   # Structured answer schemas & markdown renderer
+│   │   ├── providers/                # LLM and embedding client factory wrappers
+│   │   ├── rag/                      # Generic vector store ingestion and retrieval tools
 │   │   ├── retrieval/                # System One reranker (TypeSafe Jev Choice)
-│   │   └── tools/                    # Dynamic tool factory (SQL & Document tools)
-│   └── nga/                          # NGA Manufacturing Flagship Implementation
-│       ├── cache/                    # L0/L1/L2 multi-tier SQLite caching
+│   │   ├── tools/                    # Dynamic tool factory (SQL & Document retrieval tools)
+│   │   ├── tracing.py                # OpenTelemetry tracing, span decorators & token telemetry
+│   │   └── ui/                       # Domain-adaptive FastAPI server & web dashboard
+│   └── nga/                          # NGA Manufacturing Flagship & Backward-Compatibility Shims
+│       ├── cache/                    # Shim re-exporting from enterprise_agent.cache
 │       ├── cli.py                    # Manufacturing terminal chat loop
-│       ├── compression/              # Headroom context compression & session raw store
+│       ├── compression/              # Shim re-exporting from enterprise_agent.compression
 │       ├── config.py                 # NGA configuration & environment bindings
-│       ├── evaluation/               # Grounding auditor, Jev judge, stepped suite, CI tracker
+│       ├── evaluation/               # Shims re-exporting from enterprise_agent.evaluation
 │       ├── graph/                    # NGA LangGraph nodes & workflow definitions
 │       ├── graphrag/                 # NetworkX knowledge graph & BFS hybrid retrieval
-│       ├── hitl/                     # NGA Human-in-the-Loop decision gate
+│       ├── hitl/                     # Shim re-exporting from enterprise_agent.hitl
 │       ├── ingestion/                # Vector store & graph builder pipelines
-│       ├── memory/                   # Episodic semantic memory (Headroom) & checkpointer
+│       ├── memory/                   # Shim re-exporting from enterprise_agent.memory
 │       ├── tools/                    # NGA SQL, document retrieval & verbatim tools
-│       ├── tracing.py                # OpenTelemetry tracing, span decorators & token telemetry
-│       └── ui/                       # Modern web dashboard (FastAPI backend + web assets)
+│       ├── tracing.py                # Shim re-exporting from enterprise_agent.tracing
+│       └── ui/                       # Web UI runner & compatibility shims
 ├── tests/                            # Organized 4-tier testing hierarchy
 │   ├── unit/                         # Unit tests (cache, routing, grounding, judge, rerank, etc.)
-│   ├── integration/                  # Integration tests (FastAPI UI, stress, contradiction detection)
+│   ├── integration/                  # Integration tests (vertical portability, grounding, UI, stress)
 │   ├── benchmarks/                   # Stepped evaluation & curated benchmark tests
 │   └── fixtures/                     # Test fixtures & ground truth datasets
 ├── reports/                          # Structured evaluation reports & benchmark artifacts

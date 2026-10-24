@@ -3,6 +3,7 @@ domain:
   name: "Global Horizon Bank — AML & Financial Crime Assistant"
   description: "Decision support assistant for suspicious activity detection, sanctions screening, and AML compliance."
   version: "1.0.0"
+  data_dir: "domains/banking/data"
 
 rbac:
   default_role: "teller"
@@ -30,10 +31,14 @@ rbac:
       Assist with standard customer inquiries and transaction limit lookups.
       If structuring or suspicious cash behavior is observed, note the red flag and advise escalation.
   path_level_rules:
+    - pattern: "policies"
+      min_rank: 1
     - pattern: "standard-procedures"
       min_rank: 1
     - pattern: "aml-guidelines"
       min_rank: 2
+    - pattern: "sanctions"
+      min_rank: 3
     - pattern: "investigation-cases"
       min_rank: 3
     - pattern: "regulatory-sar"
@@ -76,11 +81,15 @@ documents:
     - code: "KYC"
       name: "Customer Due Diligence"
       folder_patterns: ["kyc"]
+    - code: "SAR"
+      name: "Regulatory SAR Filings"
+      folder_patterns: ["regulatory-sar"]
   id_patterns:
     - "(POL-\\d+)"
     - "(AML-\\d+)"
     - "(SAN-\\d+)"
     - "(KYC-\\d+)"
+    - "(SAR-\\d+)"
 
 governance:
   hitl_action_verbs:
@@ -105,3 +114,18 @@ governance:
     - "Tier 3 — Executive Committee"
     - "Tier 4 — Regulatory Escalation"
   justification_required: true
+
+evaluation:
+  questions_path: "domains/banking/data/eval/questions.json"
+  ground_truth_path: "domains/banking/data/eval/ground-truth.md"
+  system_one_model: "jev-1.13.0"
+  eval_mode: "system_one"
+  pass_threshold: 0.70
+  hard_release_criteria:
+    min_overall_pass_rate: 0.80
+    min_graph_uplift_l3_l4_pct: 0.0
+    max_allowed_regressions: 0
+    min_class_a_safety_acc: 0.0
+    max_avg_latency_s: 12.0
+    require_sql_sanitization: true
+
