@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 
+import pytest
 from fastapi.testclient import TestClient
 
 from enterprise_agent.compression import SessionRawContentStore
@@ -20,6 +22,13 @@ from enterprise_agent.memory import (
     init_decision_log,
 )
 from enterprise_agent.ui.server import app
+
+
+@pytest.fixture(autouse=True)
+def ensure_typesafe_api_key(monkeypatch):
+    """Ensure TYPESAFE_API_KEY is present so DeepEval metrics can be initialized in unit tests without live credentials."""
+    if not os.getenv("TYPESAFE_API_KEY", "").strip():
+        monkeypatch.setenv("TYPESAFE_API_KEY", "test-typesafe-api-key")
 
 
 def test_enterprise_evaluation_components():
