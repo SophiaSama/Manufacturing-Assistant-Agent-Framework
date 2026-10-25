@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import BaseTool
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -75,6 +75,9 @@ def build_enterprise_agent_graph(
     tools: list[BaseTool],
     schema_summary: str = "",
     enable_hitl: bool = True,
+    checkpointer: Any = None,
+    approver: Any = None,
+    app_state_db_path: str | None = None,
 ):
     """Compile a LangGraph workflow customized for a specific domain."""
 
@@ -130,15 +133,85 @@ def build_enterprise_agent_graph(
 
         gov = final_answer.governance
         rec = final_answer.recommendation
-        if rec and (gov.hitl_required or gov.is_critical):
+        if not rec or not (gov.hitl_required or gov.is_critical):
+            return {"approval_status": "none", "approval_note": None}
+
+        # 1. Extract question for decision log
+        question = ""
+        for m in reversed(state.get("messages", [])):
+            if getattr(m, "type", "") == "human" or isinstance(m, HumanMessage):
+                question = getattr(m, "content", str(m))
+                break
+        if not question and state.get("messages"):
+            first_msg = state["messages"][0]
+            question = getattr(first_msg, "content", str(first_msg))
+
+        user_role = state.get("user_role", domain_config.rbac.default_role)
+        thread_id = state.get("thread_id")
+        category = domain_config.domain.id
+
+        # 2. Persist recommendation in decisions_log
+        decision_id = None
+        db_path = app_state_db_path or getattr(domain_config, "app_state_db_path", None)
+        if db_path:
+            from enterprise_agent.memory.decision_log import (
+                init_decision_log,
+                insert_recommendation,
+                update_decision,
+            )
+            init_decision_log(db_path)
+            decision_id = insert_recommendation(
+                db_path=db_path,
+                question=question,
+                recommendation=rec,
+                category=category,
+                user_role=user_role,
+                class_a_alert=gov.is_critical,
+                escalation_level=gov.escalation_tier,
+                thread_id=thread_id,
+            )
+
+        # 3. Pluggable non-interactive approver or fallback
+        if approver is not None:
+            try:
+                status, note = approver(
+                    rec,
+                    governance=gov,
+                    config=domain_config.governance,
+                    class_a_alert=gov.is_critical,
+                    escalation_level=gov.escalation_tier,
+                )
+            except TypeError:
+                try:
+                    status, note = approver(
+                        rec,
+                        class_a_alert=gov.is_critical,
+                        escalation_level=gov.escalation_tier,
+                    )
+                except TypeError:
+                    try:
+                        status, note = approver(rec)
+                    except TypeError:
+                        status, note = approver()
+        else:
             status, note = request_approval(
                 rec,
                 governance=gov,
                 config=domain_config.governance,
             )
-            return {"approval_status": status, "approval_note": note}
 
-        return {"approval_status": "none", "approval_note": None}
+        # 4. Update status in decisions_log
+        if db_path and decision_id is not None:
+            from enterprise_agent.memory.decision_log import update_decision
+            update_decision(db_path, decision_id, status=status, approver=note)
+
+        result_payload: dict[str, Any] = {
+            "approval_status": status,
+            "approval_note": note,
+        }
+        if decision_id is not None:
+            result_payload["decision_id"] = decision_id
+        return result_payload
 
     # Build Graph
     graph = StateGraph(AgentState)
@@ -155,4 +228,4 @@ def build_enterprise_agent_graph(
     graph.add_edge("synthesis", "hitl")
     graph.add_edge("hitl", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)

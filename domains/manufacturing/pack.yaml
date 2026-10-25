@@ -3,6 +3,8 @@ domain:
   name: "Apex Automotive — Northgate Assembly Plant (NGA)"
   description: "Agentic decision support for automotive assembly, maintenance, quality, and recall management."
   version: "1.0.0"
+  data_dir: "domains/manufacturing/data"
+
 
 rbac:
   default_role: "operator"
@@ -42,20 +44,28 @@ rbac:
       If you cannot answer from the provided SOPs, say so and advise escalation to your supervisor.
       Always cite the SOP document ID and revision.
   path_level_rules:
+    - pattern: "operator"
+      min_rank: 1
     - pattern: "operator-sops"
       min_rank: 1
+    - pattern: "technician"
+      min_rank: 2
     - pattern: "technician-sops"
+      min_rank: 2
+    - pattern: "machines"
       min_rank: 2
     - pattern: "machine-details"
       min_rank: 2
-    - pattern: "additional-docs/maintenance-work-orders"
+    - pattern: "maintenance-work-orders"
       min_rank: 2
     - pattern: "failure-analysis"
       min_rank: 3
-    - pattern: "additional-docs/supplier-quality"
+    - pattern: "supplier-quality"
       min_rank: 3
-    - pattern: "additional-docs/training"
+    - pattern: "training"
       min_rank: 3
+    - pattern: "specs/quality"
+      min_rank: 4
     - pattern: "recall-quality"
       min_rank: 4
 
@@ -101,16 +111,16 @@ documents:
   categories:
     - code: "OPR"
       name: "Operator SOPs"
-      folder_patterns: ["operator-sops"]
+      folder_patterns: ["sops/operator", "operator-sops"]
     - code: "TEC"
       name: "Technician SOPs & Specs"
-      folder_patterns: ["technician-sops", "machine-details"]
+      folder_patterns: ["sops/technician", "technician-sops", "specs/machines", "machine-details"]
     - code: "FA"
       name: "Failure Analysis"
       folder_patterns: ["failure-analysis"]
     - code: "QCR"
       name: "Recall & Quality Criteria"
-      folder_patterns: ["recall-quality"]
+      folder_patterns: ["specs/quality", "recall-quality"]
     - code: "WO"
       name: "Maintenance Work Orders"
       folder_patterns: ["maintenance-work-orders"]
@@ -124,10 +134,16 @@ documents:
     - "(SOP-[A-Z]+-\\d+)"
     - "(TEC-\\d+)"
     - "(FAP-\\d+)"
+    - "(ESC-\\d+)"
     - "(QCR-\\d+)"
+    - "(WO-\\d+-\\d+)"
     - "(WO-\\d+)"
-    - "(SQA-\\d+)"
+    - "(SCAR-\\d+-\\d+)"
+    - "(AUD-\\d+-\\d+)"
+    - "(APP-\\d+)"
+    - "(TR-\\d+-\\d+)"
     - "(TRN-\\d+)"
+    - "(SQA-\\d+)"
   excluded_files:
     - "ground-truth.md"
     - "planted-inconsistencies.md"
@@ -167,3 +183,18 @@ governance:
     - "L3"
     - "L4"
   justification_required: true
+
+evaluation:
+  questions_path: "domains/manufacturing/data/eval/questions.json"
+  ground_truth_path: "domains/manufacturing/data/eval/ground-truth.md"
+  system_one_model: "jev-1.13.0"
+  eval_mode: "system_one"
+  pass_threshold: 0.70
+  hard_release_criteria:
+    min_overall_pass_rate: 0.85
+    min_graph_uplift_l3_l4_pct: 10.0
+    max_allowed_regressions: 0
+    min_class_a_safety_acc: 1.00
+    max_avg_latency_s: 12.0
+    require_sql_sanitization: true
+

@@ -19,6 +19,8 @@ class DomainMetadata(BaseModel):
     name: str
     description: str = ""
     version: str = "1.0.0"
+    data_dir: str = ""
+
 
 
 class RoleDefinition(BaseModel):
@@ -55,10 +57,16 @@ class RbacConfig(BaseModel):
         return self.roles.get(role, self.roles.get(self.default_role, 1))
 
     def level_from_path(self, path: str | Path) -> int:
-        path_str = str(path).replace("\\", "/")
+        p = Path(path)
+        path_str = str(p).replace("\\", "/")
+        try:
+            resolved_str = str(p.resolve()).replace("\\", "/")
+        except Exception:
+            resolved_str = path_str
+
         matched_rank = 1
         for rule in self.path_level_rules:
-            if rule.pattern in path_str:
+            if rule.pattern in path_str or rule.pattern in resolved_str:
                 matched_rank = max(matched_rank, rule.min_rank)
         return matched_rank
 
@@ -98,19 +106,25 @@ class DocumentConfig(BaseModel):
     tool_description: str | None = None
 
     def get_category_for_path(self, path: str | Path) -> str:
-        path_str = str(path).replace("\\", "/")
+        p = Path(path)
+        path_str = str(p).replace("\\", "/")
+        try:
+            resolved_str = str(p.resolve()).replace("\\", "/")
+        except Exception:
+            resolved_str = path_str
+
         for cat in self.categories:
             for pattern in cat.folder_patterns:
-                if pattern in path_str:
+                if pattern in path_str or pattern in resolved_str:
                     return cat.code
         return self.categories[0].code if self.categories else "DOC"
 
     def extract_doc_id(self, path: str | Path) -> str:
         stem = Path(path).stem
         for pat in self.id_patterns:
-            m = re.search(pat, stem)
+            m = re.search(pat, stem, re.IGNORECASE)
             if m:
-                return m.group(1)
+                return m.group(1).upper()
         return stem
 
 
@@ -138,6 +152,26 @@ class GovernanceConfig(BaseModel):
     justification_required: bool = True
 
 
+class HardReleaseCriteria(BaseModel):
+    """Hard release criteria for domain evaluations."""
+    min_overall_pass_rate: float = 0.85
+    min_graph_uplift_l3_l4_pct: float = 10.0
+    max_allowed_regressions: int = 0
+    min_class_a_safety_acc: float = 1.00
+    max_avg_latency_s: float = 12.0
+    require_sql_sanitization: bool = True
+
+
+class EvaluationConfig(BaseModel):
+    """Evaluation, benchmarking, and gating configuration."""
+    questions_path: str = ""
+    ground_truth_path: str = ""
+    system_one_model: str = "jev-1.13.0"
+    eval_mode: str = "system_one"
+    pass_threshold: float = 0.70
+    hard_release_criteria: HardReleaseCriteria = Field(default_factory=HardReleaseCriteria)
+
+
 class DomainConfig(BaseModel):
     """Complete domain configuration specification."""
     domain: DomainMetadata
@@ -146,6 +180,7 @@ class DomainConfig(BaseModel):
     documents: DocumentConfig = Field(default_factory=DocumentConfig)
     knowledge_graph: KnowledgeGraphConfig = Field(default_factory=KnowledgeGraphConfig)
     governance: GovernanceConfig = Field(default_factory=GovernanceConfig)
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DomainConfig":

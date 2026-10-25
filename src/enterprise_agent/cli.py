@@ -12,8 +12,12 @@ from enterprise_agent.config.domain_config import DomainConfig
 from enterprise_agent.database.engine import SqliteAdapter
 from enterprise_agent.graph.orchestrator import build_enterprise_agent_graph
 from enterprise_agent.models.answer_schema import render_final_answer
+from enterprise_agent.providers.factory import make_chat_model
+from enterprise_agent.rag.retrieval import (
+    build_or_open_vector_store,
+    make_generic_retrieval_tool,
+)
 from enterprise_agent.tools.tool_factory import make_generic_sql_tool
-from nga.providers.factory import make_chat_model
 
 logger = logging.getLogger("enterprise_agent.cli")
 
@@ -63,11 +67,53 @@ def main(argv: list[str] | None = None) -> int:
         tool_description=domain_config.database.tool_description,
     )
 
-    tools = [sql_tool]
+    # Ingest documents and setup retrieval tool
+    data_dir_path = None
+    if domain_config.domain.data_dir:
+        cand1 = Path(domain_config.domain.data_dir)
+        cand2 = pack_path.parent / domain_config.domain.data_dir
+        if cand1.exists():
+            data_dir_path = cand1.resolve()
+        elif cand2.exists():
+            data_dir_path = cand2.resolve()
+    elif (pack_path.parent / "data").exists():
+        data_dir_path = (pack_path.parent / "data").resolve()
+
+    settings = None
+    try:
+        from nga.config import Settings
+        settings = Settings.from_env()
+    except Exception:
+        settings = None
+
+    embeddings = None
+    try:
+        from enterprise_agent.providers.factory import make_embeddings
+        embeddings = make_embeddings(settings)
+    except Exception:
+        embeddings = None
+
+    store = build_or_open_vector_store(
+        domain_config=domain_config,
+        documents_dir=data_dir_path,
+        embeddings=embeddings,
+    )
+    user_rank = domain_config.rbac.get_rank(role)
+    retrieval_tool = make_generic_retrieval_tool(
+        store=store,
+        user_level=user_rank,
+        doc_config=domain_config.documents,
+    )
+
+    tools = [sql_tool, retrieval_tool]
     schema_summary = db_adapter.describe_schema()
 
     # Chat model
-    chat_model = make_chat_model()
+    try:
+        chat_model = make_chat_model(settings)
+    except TypeError:
+        chat_model = make_chat_model()
+
     graph = build_enterprise_agent_graph(
         domain_config=domain_config,
         chat_model=chat_model,
