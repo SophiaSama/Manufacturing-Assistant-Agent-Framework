@@ -232,3 +232,12 @@ def test_cross_type_merge_is_sent_to_review(monkeypatch, tmp_path):
     assert report["merged_count"] == 0
     assert report["review_count"] == 1
     assert G.number_of_nodes() == 2
+
+
+def test_conflicting_equipment_codes_are_not_paired():
+    G = nx.Graph()
+    G.add_node("tq-6012", type="Machine", name="TorqMaster TQ-6012 Nutrunner")
+    G.add_node("tq-6018", type="Machine", name="TorqMaster TQ-6018 Audit Wrench")
+    pairs = set(generate_candidate_pairs(G))
+    assert ("tq-6012", "tq-6018") not in pairs
+

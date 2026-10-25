@@ -224,6 +224,41 @@
             <!-- Populated dynamically via JS -->
           </div>
 
+          <!-- Interactive Knowledge Graph Topology Explorer -->
+          <div class="card mb-4">
+            <div class="card-header-flex" style="flex-wrap: wrap; gap: 0.75rem;">
+              <div>
+                <h3 class="card-title">🧭 Interactive Knowledge Graph Topology Explorer</h3>
+                <p class="text-muted text-sm" style="margin: 0.2rem 0 0 0;">Click any node to inspect its aliases, RBAC rank, and document provenance. Drag nodes to rearrange; scroll to zoom.</p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <input type="text" id="kg-search-input" class="input-sm" placeholder="Search entity (e.g. tq-6012, class-a)..." style="width: 220px;" />
+                <select id="kg-type-filter" class="select-sm">
+                  <option value="all">All Entity Types</option>
+                </select>
+                <select id="kg-rbac-filter" class="select-sm">
+                  <option value="4">RBAC: L4 (Plant Manager)</option>
+                  <option value="3">RBAC: L3 (Quality Engineer)</option>
+                  <option value="2">RBAC: L2 (Technician)</option>
+                  <option value="1">RBAC: L1 (Operator)</option>
+                </select>
+                <button class="btn btn-sm btn-outline" id="btn-kg-reset">Reset View</button>
+              </div>
+            </div>
+
+            <div id="kg-type-legend" style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; font-size: 0.75rem;"></div>
+
+            <div style="display: grid; grid-template-columns: 1fr 310px; gap: 1rem; align-items: stretch;">
+              <div style="position: relative; background: #0b1120; border: 1px solid var(--border-color); border-radius: var(--radius-md); height: 480px; overflow: hidden;">
+                <canvas id="kg-topology-canvas" style="width: 100%; height: 100%; display: block; cursor: grab;"></canvas>
+                <div id="kg-canvas-stats" style="position: absolute; bottom: 8px; left: 10px; font-size: 0.72rem; color: var(--text-muted); background: rgba(15, 23, 42, 0.85); padding: 3px 8px; border-radius: 4px; pointer-events: none;"></div>
+              </div>
+              <div id="kg-node-inspector" style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 0.9rem; overflow-y: auto; max-height: 480px; font-size: 0.82rem;">
+                <div class="text-muted">Click a node in the graph to inspect its canonical ID, aliases, connected triples, and source document provenance.</div>
+              </div>
+            </div>
+          </div>
+
           <!-- Ingestion Diagnostics Grid -->
           <div class="grid-2-col mb-4">
             <!-- Ontology Violations -->

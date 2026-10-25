@@ -132,6 +132,14 @@
     graphCoverageTable: document.getElementById("graph-coverage-table"),
     badgeOntologyStatus: document.getElementById("badge-ontology-status"),
     badgeAlignmentStatus: document.getElementById("badge-alignment-status"),
+    kgSearchInput: document.getElementById("kg-search-input"),
+    kgTypeFilter: document.getElementById("kg-type-filter"),
+    kgRbacFilter: document.getElementById("kg-rbac-filter"),
+    btnKgReset: document.getElementById("btn-kg-reset"),
+    kgTypeLegend: document.getElementById("kg-type-legend"),
+    kgTopologyCanvas: document.getElementById("kg-topology-canvas"),
+    kgCanvasStats: document.getElementById("kg-canvas-stats"),
+    kgNodeInspector: document.getElementById("kg-node-inspector"),
 
     // Stepped Suite Dashboard (Dashboard 2)
     degradationSlopeBadge: document.getElementById("degradation-slope-badge"),
@@ -302,7 +310,31 @@
 
     // Graph Quality
     if (els.btnRefreshGraphEval) {
-      els.btnRefreshGraphEval.addEventListener("click", () => fetchGraphQualityData(true));
+      els.btnRefreshGraphEval.addEventListener("click", () => {
+        fetchGraphQualityData(true);
+        fetchGraphTopologyData();
+      });
+    }
+    if (els.kgSearchInput) {
+      let kgSearchTimer = null;
+      els.kgSearchInput.addEventListener("input", () => {
+        clearTimeout(kgSearchTimer);
+        kgSearchTimer = setTimeout(() => fetchGraphTopologyData(), 250);
+      });
+    }
+    if (els.kgTypeFilter) {
+      els.kgTypeFilter.addEventListener("change", () => fetchGraphTopologyData());
+    }
+    if (els.kgRbacFilter) {
+      els.kgRbacFilter.addEventListener("change", () => fetchGraphTopologyData());
+    }
+    if (els.btnKgReset) {
+      els.btnKgReset.addEventListener("click", () => {
+        if (els.kgSearchInput) els.kgSearchInput.value = "";
+        if (els.kgTypeFilter) els.kgTypeFilter.value = "all";
+        if (els.kgRbacFilter) els.kgRbacFilter.value = "4";
+        fetchGraphTopologyData();
+      });
     }
 
     // Multi-Model Arena
@@ -345,7 +377,10 @@
         state.autoLogInterval = null;
       }
     }
-    if (tabName === "graph") fetchGraphQualityData();
+    if (tabName === "graph") {
+      fetchGraphQualityData();
+      fetchGraphTopologyData();
+    }
     if (tabName === "stepped") fetchSteppedData();
     if (tabName === "compare") fetchEvalReports();
     if (tabName === "multimodel") fetchMultiModelData();
@@ -1885,6 +1920,388 @@
         </tr>
       `).join("");
     }
+  }
+
+  // ── Interactive Knowledge Graph Topology Visualizer ─────────────────────────
+
+  const KG_TYPE_COLORS = {
+    SOP: "#38bdf8",
+    Procedure: "#60a5fa",
+    Machine: "#f59e0b",
+    Station: "#a855f7",
+    Threshold: "#10b981",
+    Torque: "#34d399",
+    FaultCode: "#ef4444",
+    DefectCode: "#f87171",
+    NCRecord: "#fb923c",
+    EscalationLevel: "#ec4899",
+    RecallCriteria: "#e879f9",
+    Part: "#fbbf24",
+    Supplier: "#2dd4bf",
+    Personnel: "#818cf8",
+    WorkOrder: "#94a3b8",
+  };
+
+  let kgSimState = {
+    nodes: [],
+    edges: [],
+    selectedNodeId: null,
+    transform: { x: 0, y: 0, scale: 1 },
+    draggingNode: null,
+    isPanning: false,
+    panStart: { x: 0, y: 0 },
+    animFrame: null,
+    initializedEvents: false,
+  };
+
+  async function fetchGraphTopologyData() {
+    if (!els.kgTopologyCanvas) return;
+    const query = els.kgSearchInput ? els.kgSearchInput.value.trim() : "";
+    const etype = els.kgTypeFilter ? els.kgTypeFilter.value : "all";
+    const rbac = els.kgRbacFilter ? els.kgRbacFilter.value : "4";
+    const params = new URLSearchParams({
+      user_level: rbac,
+      max_nodes: "90",
+    });
+    if (query) params.set("query", query);
+    if (etype && etype !== "all") params.set("entity_type", etype);
+
+    try {
+      const res = await fetch(`/api/graph/topology?${params.toString()}`);
+      const data = await res.json();
+      populateKgFiltersAndLegend(data.entity_types || []);
+      initKgForceGraph(data);
+    } catch (err) {
+      console.error("Failed to fetch graph topology", err);
+    }
+  }
+
+  function populateKgFiltersAndLegend(entityTypes) {
+    if (els.kgTypeFilter && els.kgTypeFilter.options.length <= 1 && entityTypes.length > 0) {
+      const current = els.kgTypeFilter.value;
+      els.kgTypeFilter.innerHTML = `<option value="all">All Entity Types</option>` +
+        entityTypes.map(t => `<option value="${escapeHTML(t.type)}">${escapeHTML(t.type)} (${t.count})</option>`).join("");
+      els.kgTypeFilter.value = current || "all";
+    }
+    if (els.kgTypeLegend) {
+      els.kgTypeLegend.innerHTML = entityTypes.map(t => {
+        const color = KG_TYPE_COLORS[t.type] || "#94a3b8";
+        return `<span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:12px;background:rgba(30,41,59,0.8);border:1px solid rgba(148,163,184,0.2);cursor:pointer;" data-kg-type="${escapeHTML(t.type)}">
+          <span style="width:8px;height:8px;border-radius:50%;background:${color};display:inline-block;"></span>
+          <span>${escapeHTML(t.type)} (${t.count})</span>
+        </span>`;
+      }).join("");
+      els.kgTypeLegend.querySelectorAll("[data-kg-type]").forEach(badge => {
+        badge.addEventListener("click", () => {
+          const clickedType = badge.getAttribute("data-kg-type");
+          if (els.kgTypeFilter) {
+            els.kgTypeFilter.value = els.kgTypeFilter.value === clickedType ? "all" : clickedType;
+            fetchGraphTopologyData();
+          }
+        });
+      });
+    }
+  }
+
+  function initKgForceGraph(data) {
+    const canvas = els.kgTopologyCanvas;
+    if (!canvas) return;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const width = Math.max(rect.width || 650, 400);
+    const height = Math.max(rect.height || 480, 360);
+    canvas.width = width;
+    canvas.height = height;
+
+    const rawNodes = data.nodes || [];
+    const rawEdges = data.edges || [];
+
+    if (els.kgCanvasStats) {
+      els.kgCanvasStats.textContent = `Showing ${rawNodes.length} / ${data.total_nodes || 0} nodes · ${rawEdges.length} / ${data.total_edges || 0} directed edges`;
+    }
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const nodeMap = new Map();
+    const simNodes = rawNodes.map((n, idx) => {
+      const angle = (2 * Math.PI * idx) / Math.max(rawNodes.length, 1);
+      const radius = 60 + (idx % 5) * 35;
+      const obj = {
+        ...n,
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+        vx: 0,
+        vy: 0,
+        r: Math.min(18, Math.max(7, 6 + Math.sqrt(n.degree || 1) * 2.2)),
+      };
+      nodeMap.set(n.id, obj);
+      return obj;
+    });
+
+    const simEdges = rawEdges
+      .map(e => ({
+        ...e,
+        sourceNode: nodeMap.get(e.source),
+        targetNode: nodeMap.get(e.target),
+      }))
+      .filter(e => e.sourceNode && e.targetNode);
+
+    kgSimState.nodes = simNodes;
+    kgSimState.edges = simEdges;
+    kgSimState.transform = { x: 0, y: 0, scale: 1 };
+
+    setupKgCanvasInteractions(canvas);
+
+    let ticks = 0;
+    if (kgSimState.animFrame) cancelAnimationFrame(kgSimState.animFrame);
+
+    function step() {
+      if (ticks < 140) {
+        stepForcePhysics(simNodes, simEdges, width, height);
+        ticks++;
+      }
+      drawKgCanvas(canvas);
+      if (ticks < 140 || kgSimState.draggingNode) {
+        kgSimState.animFrame = requestAnimationFrame(step);
+      }
+    }
+    step();
+  }
+
+  function stepForcePhysics(nodes, edges, width, height) {
+    const kRepel = 1600;
+    const kSpring = 0.035;
+    const restLen = 95;
+    const cx = width / 2;
+    const cy = height / 2;
+
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let distSq = dx * dx + dy * dy + 1;
+        if (distSq > 90000) continue;
+        let dist = Math.sqrt(distSq);
+        let force = kRepel / distSq;
+        let fx = (dx / dist) * force;
+        let fy = (dy / dist) * force;
+        a.vx -= fx;
+        a.vy -= fy;
+        b.vx += fx;
+        b.vy += fy;
+      }
+    }
+
+    for (const e of edges) {
+      const s = e.sourceNode;
+      const t = e.targetNode;
+      let dx = t.x - s.x;
+      let dy = t.y - s.y;
+      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      let disp = dist - restLen;
+      let fx = (dx / dist) * disp * kSpring;
+      let fy = (dy / dist) * disp * kSpring;
+      s.vx += fx;
+      s.vy += fy;
+      t.vx -= fx;
+      t.vy -= fy;
+    }
+
+    for (const n of nodes) {
+      if (n === kgSimState.draggingNode) continue;
+      n.vx += (cx - n.x) * 0.006;
+      n.vy += (cy - n.y) * 0.006;
+      n.vx *= 0.78;
+      n.vy *= 0.78;
+      n.x += Math.max(-12, Math.min(12, n.vx));
+      n.y += Math.max(-12, Math.min(12, n.vy));
+    }
+  }
+
+  function drawKgCanvas(canvas) {
+    const ctx = canvas.getContext("2d");
+    const { width, height } = canvas;
+    ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.translate(kgSimState.transform.x, kgSimState.transform.y);
+    ctx.scale(kgSimState.transform.scale, kgSimState.transform.scale);
+
+    const selId = kgSimState.selectedNodeId;
+    const neighborIds = new Set();
+    if (selId) {
+      neighborIds.add(selId);
+      for (const e of kgSimState.edges) {
+        if (e.source === selId) neighborIds.add(e.target);
+        if (e.target === selId) neighborIds.add(e.source);
+      }
+    }
+
+    // Draw edges
+    for (const e of kgSimState.edges) {
+      const s = e.sourceNode;
+      const t = e.targetNode;
+      const isHighlighted = selId && (e.source === selId || e.target === selId);
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(t.x, t.y);
+      if (!e.valid) {
+        ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";
+        ctx.setLineDash([4, 3]);
+      } else if (isHighlighted) {
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.9)";
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = selId ? "rgba(148, 163, 184, 0.12)" : "rgba(148, 163, 184, 0.32)";
+        ctx.setLineDash([]);
+      }
+      ctx.lineWidth = isHighlighted ? 2.0 : 1.1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Directional arrow
+      const angle = Math.atan2(t.y - s.y, t.x - s.x);
+      const ax = t.x - Math.cos(angle) * (t.r + 3);
+      const ay = t.y - Math.sin(angle) * (t.r + 3);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax - 6 * Math.cos(angle - Math.PI / 6), ay - 6 * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(ax - 6 * Math.cos(angle + Math.PI / 6), ay - 6 * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = isHighlighted ? "#38bdf8" : "rgba(148, 163, 184, 0.45)";
+      ctx.fill();
+
+      if (isHighlighted) {
+        const mx = (s.x + t.x) / 2;
+        const my = (s.y + t.y) / 2;
+        ctx.font = "10px Inter, sans-serif";
+        ctx.fillStyle = "#bae6fd";
+        ctx.fillText(e.relation, mx + 4, my - 4);
+      }
+    }
+
+    // Draw nodes
+    for (const n of kgSimState.nodes) {
+      const color = KG_TYPE_COLORS[n.type] || "#94a3b8";
+      const dimmed = selId && !neighborIds.has(n.id);
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.fillStyle = dimmed ? "rgba(71, 85, 105, 0.35)" : color;
+      ctx.fill();
+      ctx.lineWidth = n.id === selId ? 3 : 1.5;
+      ctx.strokeStyle = n.id === selId ? "#ffffff" : "rgba(15, 23, 42, 0.9)";
+      ctx.stroke();
+
+      if (!dimmed || n.degree >= 4) {
+        ctx.font = n.id === selId ? "bold 11px Inter, sans-serif" : "10px Inter, sans-serif";
+        ctx.fillStyle = dimmed ? "rgba(148, 163, 184, 0.4)" : "#e2e8f0";
+        const label = (n.name || n.id).length > 24 ? (n.name || n.id).slice(0, 22) + "…" : (n.name || n.id);
+        ctx.fillText(label, n.x + n.r + 4, n.y + 3);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function setupKgCanvasInteractions(canvas) {
+    if (kgSimState.initializedEvents) return;
+    kgSimState.initializedEvents = true;
+
+    function toWorld(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (clientX - rect.left - kgSimState.transform.x) / kgSimState.transform.scale;
+      const y = (clientY - rect.top - kgSimState.transform.y) / kgSimState.transform.scale;
+      return { x, y };
+    }
+
+    function findNodeAt(wx, wy) {
+      for (let i = kgSimState.nodes.length - 1; i >= 0; i--) {
+        const n = kgSimState.nodes[i];
+        const dx = wx - n.x;
+        const dy = wy - n.y;
+        if (dx * dx + dy * dy <= (n.r + 4) * (n.r + 4)) return n;
+      }
+      return null;
+    }
+
+    canvas.addEventListener("mousedown", (e) => {
+      const { x, y } = toWorld(e.clientX, e.clientY);
+      const hit = findNodeAt(x, y);
+      if (hit) {
+        kgSimState.draggingNode = hit;
+        kgSimState.selectedNodeId = hit.id;
+        renderKgNodeInspector(hit);
+        drawKgCanvas(canvas);
+      } else {
+        kgSimState.isPanning = true;
+        kgSimState.panStart = { x: e.clientX - kgSimState.transform.x, y: e.clientY - kgSimState.transform.y };
+      }
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (kgSimState.draggingNode) {
+        const { x, y } = toWorld(e.clientX, e.clientY);
+        kgSimState.draggingNode.x = x;
+        kgSimState.draggingNode.y = y;
+        drawKgCanvas(canvas);
+      } else if (kgSimState.isPanning) {
+        kgSimState.transform.x = e.clientX - kgSimState.panStart.x;
+        kgSimState.transform.y = e.clientY - kgSimState.panStart.y;
+        drawKgCanvas(canvas);
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      kgSimState.draggingNode = null;
+      kgSimState.isPanning = false;
+    });
+
+    canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.12 : 0.9;
+      kgSimState.transform.scale = Math.max(0.35, Math.min(3.0, kgSimState.transform.scale * factor));
+      drawKgCanvas(canvas);
+    }, { passive: false });
+  }
+
+  function renderKgNodeInspector(node) {
+    if (!els.kgNodeInspector) return;
+    const color = KG_TYPE_COLORS[node.type] || "#94a3b8";
+    const outEdges = kgSimState.edges.filter(e => e.source === node.id);
+    const inEdges = kgSimState.edges.filter(e => e.target === node.id);
+    const aliasesHtml = (node.aliases && node.aliases.length)
+      ? node.aliases.map(a => `<code style="margin-right:4px;">${escapeHTML(a)}</code>`).join(" ")
+      : `<span class="text-muted">None</span>`;
+    const sourcesHtml = (node.sources && node.sources.length)
+      ? node.sources.map(s => `<li><code>${escapeHTML(s.document || "?")}</code> (chunk ${escapeHTML(String(s.chunk ?? 0))})</li>`).join("")
+      : `<li class="text-muted">No provenance recorded</li>`;
+
+    els.kgNodeInspector.innerHTML = `
+      <div style="margin-bottom:0.6rem;">
+        <span style="display:inline-block;padding:2px 8px;border-radius:10px;background:${color};color:#0f172a;font-weight:700;font-size:0.7rem;">${escapeHTML(node.type)}</span>
+        <span class="badge badge-info" style="margin-left:4px;">RBAC L${node.level_rank || 1}</span>
+        <span class="badge" style="margin-left:4px;">Deg: ${node.degree || 0}</span>
+      </div>
+      <h4 style="margin:0 0 0.25rem 0;font-size:0.95rem;">${escapeHTML(node.name)}</h4>
+      <div style="margin-bottom:0.5rem;color:var(--text-muted);font-size:0.75rem;">Canonical ID: <code>${escapeHTML(node.id)}</code></div>
+      <p style="margin:0 0 0.65rem 0;line-height:1.4;">${escapeHTML(node.description || "No description")}</p>
+      <div style="margin-bottom:0.65rem;">
+        <strong style="display:block;margin-bottom:0.2rem;font-size:0.75rem;color:var(--text-muted);">Bound Synonym Aliases:</strong>
+        <div>${aliasesHtml}</div>
+      </div>
+      <div style="margin-bottom:0.65rem;">
+        <strong style="display:block;margin-bottom:0.2rem;font-size:0.75rem;color:var(--text-muted);">Outgoing Relations (${outEdges.length}):</strong>
+        ${outEdges.length ? `<ul style="margin:0;padding-left:1.1rem;">${outEdges.slice(0, 8).map(e => `<li><code>--[${escapeHTML(e.relation)}]--></code> <strong>${escapeHTML(e.target)}</strong></li>`).join("")}</ul>` : `<div class="text-muted">None</div>`}
+      </div>
+      <div style="margin-bottom:0.65rem;">
+        <strong style="display:block;margin-bottom:0.2rem;font-size:0.75rem;color:var(--text-muted);">Incoming Relations (${inEdges.length}):</strong>
+        ${inEdges.length ? `<ul style="margin:0;padding-left:1.1rem;">${inEdges.slice(0, 8).map(e => `<li><strong>${escapeHTML(e.source)}</strong> <code>--[${escapeHTML(e.relation)}]--></code></li>`).join("")}</ul>` : `<div class="text-muted">None</div>`}
+      </div>
+      <div>
+        <strong style="display:block;margin-bottom:0.2rem;font-size:0.75rem;color:var(--text-muted);">Document Provenance:</strong>
+        <ul style="margin:0;padding-left:1.1rem;">${sourcesHtml}</ul>
+      </div>
+    `;
   }
 
   // ── Stepped Suite Dashboard (Dashboard 2) ───────────────────────────────────

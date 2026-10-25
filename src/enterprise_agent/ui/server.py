@@ -7,7 +7,7 @@ import logging
 import os
 import sqlite3
 import uuid
-from collections import deque
+from collections import Counter, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1196,6 +1196,156 @@ def create_app() -> FastAPI:
             ctx.graph_data = graph
 
         return evaluate_graph_quality(graph)
+
+    @app.get("/api/graph/topology")
+    def get_graph_topology(
+        user_level: int = Query(4, ge=1, le=4, description="RBAC access level (1-4)"),
+        entity_type: str | None = Query(None, description="Optional entity type filter"),
+        query: str | None = Query(None, description="Optional search query for ego-network filtering"),
+        max_hops: int = Query(2, ge=1, le=4, description="BFS hop radius when query is provided"),
+        max_nodes: int = Query(150, ge=10, le=500, description="Max nodes to return"),
+    ) -> dict[str, Any]:
+        """Interactive Knowledge Graph Topology endpoint for node-link visualization."""
+        from nga.ingestion.build_graph import load_graph
+        from nga.ingestion.normalize import canonical_id, check_relation
+
+        graph = ctx.graph_data
+        if graph is None:
+            store_dir = ctx.settings.graph_store_dir if ctx.settings else "data/graph_store"
+            graph = load_graph(store_dir)
+            ctx.graph_data = graph
+
+        if graph is None or graph.number_of_nodes() == 0:
+            return {
+                "nodes": [],
+                "edges": [],
+                "entity_types": [],
+                "relation_types": [],
+                "total_nodes": 0,
+                "total_edges": 0,
+            }
+
+        degrees = dict(graph.degree())
+        all_types: Counter[str] = Counter()
+        for _nid, ndata in graph.nodes(data=True):
+            if int(ndata.get("level_rank", 1)) <= user_level:
+                all_types[str(ndata.get("type") or "Unknown")] += 1
+
+        # Optional search / ego-network expansion
+        candidate_nodes: set[str] = {
+            str(nid)
+            for nid, ndata in graph.nodes(data=True)
+            if int(ndata.get("level_rank", 1)) <= user_level
+        }
+
+        if query and query.strip():
+            q_lower = query.strip().lower()
+            q_slug = canonical_id(q_lower)
+            seeds: set[str] = set()
+            for nid in candidate_nodes:
+                ndata = graph.nodes[nid]
+                aliases = [str(a).lower() for a in (ndata.get("aliases") or []) if a]
+                haystack = " ".join([nid.lower(), str(ndata.get("name", "")).lower(), *aliases])
+                if q_lower in haystack or (q_slug and q_slug in canonical_id(haystack)):
+                    seeds.add(nid)
+            if seeds:
+                visited = set(seeds)
+                frontier = list(seeds)
+                for _ in range(max_hops):
+                    next_f: list[str] = []
+                    for cur in frontier:
+                        neighbors = (
+                            (set(graph.successors(cur)) | set(graph.predecessors(cur)))
+                            if graph.is_directed()
+                            else set(graph.neighbors(cur))
+                        )
+                        for nb in neighbors:
+                            nb_str = str(nb)
+                            if nb_str in candidate_nodes and nb_str not in visited:
+                                visited.add(nb_str)
+                                next_f.append(nb_str)
+                    frontier = next_f
+                candidate_nodes = visited
+            else:
+                candidate_nodes = set()
+
+        if entity_type and entity_type.strip() and entity_type.lower() != "all":
+            want_type = entity_type.strip().lower()
+            type_matches = {
+                nid
+                for nid in candidate_nodes
+                if str(graph.nodes[nid].get("type", "")).lower() == want_type
+            }
+            # Include direct 1-hop neighbors so context edges remain visible
+            expanded = set(type_matches)
+            for nid in type_matches:
+                neighbors = (
+                    (set(graph.successors(nid)) | set(graph.predecessors(nid)))
+                    if graph.is_directed()
+                    else set(graph.neighbors(nid))
+                )
+                for nb in neighbors:
+                    if str(nb) in candidate_nodes:
+                        expanded.add(str(nb))
+            candidate_nodes = expanded
+
+        # Sort by degree descending and cap at max_nodes
+        sorted_nodes = sorted(
+            candidate_nodes,
+            key=lambda n: (degrees.get(n, 0), str(n)),
+            reverse=True,
+        )[:max_nodes]
+        selected_set = set(sorted_nodes)
+
+        nodes_out: list[dict[str, Any]] = []
+        for nid in sorted_nodes:
+            ndata = graph.nodes[nid]
+            nodes_out.append({
+                "id": str(nid),
+                "name": ndata.get("name") or str(nid),
+                "type": ndata.get("type") or "Unknown",
+                "description": ndata.get("description") or "",
+                "aliases": ndata.get("aliases") or [],
+                "level_rank": int(ndata.get("level_rank", 1)),
+                "confidence": float(ndata.get("confidence", 1.0)),
+                "community": int(ndata.get("community", 0)),
+                "degree": int(degrees.get(nid, 0)),
+                "sources": (ndata.get("sources") or [])[:5],
+            })
+
+        edges_out: list[dict[str, Any]] = []
+        rel_counts: Counter[str] = Counter()
+        for u, v, edata in graph.edges(data=True):
+            u_str, v_str = str(u), str(v)
+            if u_str not in selected_set or v_str not in selected_set:
+                continue
+            if int(edata.get("level_rank", 1)) > user_level:
+                continue
+            rel = str(edata.get("relation") or "related")
+            rel_counts[rel] += 1
+            u_type = str(graph.nodes[u].get("type", "")).lower()
+            v_type = str(graph.nodes[v].get("type", "")).lower()
+            violation = check_relation(rel, u_type, v_type)
+            edges_out.append({
+                "source": u_str,
+                "target": v_str,
+                "relation": rel,
+                "description": edata.get("description") or "",
+                "level_rank": int(edata.get("level_rank", 1)),
+                "confidence": float(edata.get("confidence", 1.0)),
+                "valid": violation is None,
+                "violation": violation,
+                "sources": (edata.get("sources") or [])[:3],
+            })
+
+        return {
+            "nodes": nodes_out,
+            "edges": edges_out,
+            "entity_types": [{"type": k, "count": v} for k, v in sorted(all_types.items())],
+            "relation_types": [{"relation": k, "count": v} for k, v in sorted(rel_counts.items())],
+            "total_nodes": graph.number_of_nodes(),
+            "total_edges": graph.number_of_edges(),
+        }
 
 
     @app.get("/api/eval/stepped-suite")

@@ -151,6 +151,7 @@ def retrieve_graph_evidence(
     max_hops: int = 2,
     user_level: int = 1,
     cache: Any | None = None,
+    retrieved_docs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run RBAC-filtered GraphRAG local search (cached per query params)."""
     def _run() -> dict[str, Any]:
@@ -159,6 +160,7 @@ def retrieve_graph_evidence(
             return build_graph_evidence(
                 graph, query, embeddings,
                 k_entities=k_entities, max_hops=max_hops, user_level=user_level,
+                retrieved_docs=retrieved_docs,
             )
         except Exception:
             logger.exception("Graph retrieval failed for query=%r", query)

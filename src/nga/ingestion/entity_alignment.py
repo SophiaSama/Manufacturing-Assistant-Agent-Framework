@@ -89,6 +89,32 @@ def _extract_codes(text: str) -> set[str]:
     return {m.replace("_", "-") for m in matches}
 
 
+def _has_conflicting_codes(codes_a: set[str], codes_b: set[str]) -> bool:
+    """Return True if two entities have distinct numeric codes under the same prefix family.
+
+    For example, 'tq-6012' and 'tq-6018' both have prefix 'tq' with different numbers,
+    so they must never be paired or merged as duplicates.
+    """
+    if not codes_a or not codes_b or (codes_a & codes_b):
+        return False
+
+    def parse_family(codes: set[str]) -> dict[str, set[str]]:
+        fams: dict[str, set[str]] = {}
+        for c in codes:
+            m = re.match(r"^([a-z]{1,4})-?([0-9]{2,5}[a-z]?)$", c)
+            if m:
+                fams.setdefault(m.group(1), set()).add(m.group(2))
+        return fams
+
+    fams_a = parse_family(codes_a)
+    fams_b = parse_family(codes_b)
+    for prefix in set(fams_a) & set(fams_b):
+        if fams_a[prefix] != fams_b[prefix] and not (fams_a[prefix] & fams_b[prefix]):
+            return True
+    return False
+
+
+
 def _are_types_compatible(type_a: str, type_b: str) -> bool:
     if not type_a or not type_b or type_a == type_b:
         return True
@@ -114,13 +140,15 @@ def generate_candidate_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
     for node_id, data in graph.nodes(data=True):
         node_name = str(data.get("name", "")).lower()
         clean = str(node_id).lower().replace("_", "-")
+        aliases = [str(a).lower() for a in (data.get("aliases") or []) if a]
+        all_text = " ".join([node_name, clean, *aliases])
         features.append((
             node_id,
             str(data.get("type", "")).lower(),
             node_name,
             clean,
-            _tokenize(node_name) | _tokenize(clean),
-            _extract_codes(clean) | _extract_codes(node_name),
+            _tokenize(all_text),
+            _extract_codes(all_text),
         ))
 
     # Fast inverted index for technical codes
@@ -175,6 +203,8 @@ def generate_candidate_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
         id_b, type_b, name_b, id_b_clean, tokens_b, codes_b = features[j]
 
         if not _are_types_compatible(type_a, type_b):
+            continue
+        if _has_conflicting_codes(codes_a, codes_b):
             continue
 
         is_candidate = False
@@ -256,10 +286,10 @@ def deterministic_merge_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
     """Pairs that are certain duplicates, so no LLM call is needed.
 
     Two nodes of the *same non-empty type* are duplicates when their canonical
-    IDs match after removing redundant type prefixes, or when their canonical
-    names are identical.
+    IDs match after removing redundant type prefixes, when their canonical
+    names are identical, or when they resolve to the same canonical entity ID.
     """
-    from nga.ingestion.normalize import canonical_id
+    from nga.ingestion.normalize import canonical_id, resolve_canonical_id
 
     groups: dict[tuple[str, str], list[str]] = {}
     for nid, data in graph.nodes(data=True):
@@ -270,6 +300,13 @@ def deterministic_merge_pairs(graph: nx.Graph) -> list[tuple[str, str]]:
         name_key = canonical_id(data.get("name", ""))
         if name_key:
             groups.setdefault((ntype, name_key), []).append(nid)
+        resolved = resolve_canonical_id(nid, data.get("name"), data.get("aliases"))
+        if resolved:
+            groups.setdefault((ntype, resolved), []).append(nid)
+        for alias in data.get("aliases") or []:
+            akey = canonical_id(alias)
+            if akey:
+                groups.setdefault((ntype, akey), []).append(nid)
 
     pairs: set[tuple[str, str]] = set()
     for members in groups.values():
@@ -353,13 +390,16 @@ def merge_entities(graph: nx.Graph, merge_pairs: list[tuple[str, str]]) -> int:
         if len(cluster) <= 1:
             continue
 
-        # Choose canonical node: prefer the one without prefix ("machine-", "procedure-", etc.)
-        def canonical_key(nid: str) -> tuple[int, int, str]:
+        # Choose canonical node: prefer canonical registry IDs first, then IDs without redundant prefix
+        from nga.ingestion.normalize import CANONICAL_ENTITY_REGISTRY
+
+        def canonical_key(nid: str) -> tuple[int, int, int, str]:
+            in_registry = 0 if nid in CANONICAL_ENTITY_REGISTRY else 1
             has_redundant_prefix = any(
                 nid.startswith(p)
                 for p in ["machine-", "procedure-", "personnel-", "nc-record-", "part-"]
             )
-            return (1 if has_redundant_prefix else 0, len(nid), nid)
+            return (in_registry, 1 if has_redundant_prefix else 0, len(nid), nid)
 
         cluster_sorted = sorted(cluster, key=canonical_key)
         canonical = cluster_sorted[0]

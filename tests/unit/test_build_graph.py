@@ -167,3 +167,64 @@ def test_mostly_failed_windows_refuse_partial_graph():
     llm = FakeLLM([good, "bad", "bad", "bad", "bad", "bad", "bad"])
     with pytest.raises(ExtractionAborted):
         build_graph_from_documents([doc(), doc(), doc()], llm)
+
+
+def test_hybrid_search_selects_matching_entity_without_embeddings():
+    from nga.graphrag.search import build_graph_evidence
+
+    g = nx.MultiDiGraph()
+    for i in range(10):
+        g.add_node(f"noise-{i}", name=f"Noise {i}", type="Machine", level_rank=1)
+    g.add_node(
+        "tq-6012",
+        name="TorqMaster TQ-6012",
+        type="Machine",
+        aliases=["TQ6012"],
+        description="Nutrunner at Station 144",
+        level_rank=1,
+    )
+    g.add_node("torque-target-105nm", name="105 Nm Target", type="Threshold", level_rank=1)
+    g.add_edge("tq-6012", "torque-target-105nm", key="monitors", relation="monitors", level_rank=1)
+
+    ev = build_graph_evidence(g, "What torque does TQ6012 monitor?", None, k_entities=2, max_hops=2)
+    returned_ids = [e["id"] for e in ev["entities"]]
+    assert returned_ids[0] == "tq-6012"
+    assert "torque-target-105nm" in returned_ids
+
+
+def test_symptom_query_and_vector_doc_bridge():
+    from nga.graphrag.search import build_graph_evidence
+    from nga.ingestion.build_graph import sanitize_graph
+
+    raw = nx.Graph()
+    raw.add_node("station-144", name="Station 144", type="Station", level_rank=1)
+    g = sanitize_graph(raw, ensure_core_domain=True)
+
+    # 1. Pure symptom query matches via enriched core provenance/descriptions
+    ev_symptom = build_graph_evidence(
+        g,
+        "One customer reports wheel separation at highway speed. No other reports.",
+        None,
+        k_entities=5,
+        max_hops=2,
+        user_level=4,
+    )
+    symptom_ids = {e["id"] for e in ev_symptom["entities"]}
+    assert "qcr-501" in symptom_ids
+    assert "class-a-defect" in symptom_ids
+    assert "esc-402" in symptom_ids
+
+    # 2. Vector-to-graph bridge boosts nodes from retrieved_docs even on opaque query
+    ev_bridged = build_graph_evidence(
+        g,
+        "unexpected field incident report",
+        None,
+        k_entities=3,
+        max_hops=2,
+        user_level=4,
+        retrieved_docs=[{"doc_id": "QCR-501", "text": "Class A safety recall criteria C1"}],
+    )
+    bridged_top_ids = [e["id"] for e in ev_bridged["entities"][:3]]
+    assert "qcr-501" in bridged_top_ids or "class-a-defect" in bridged_top_ids
+
+
