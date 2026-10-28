@@ -92,6 +92,7 @@ def make_retrieval_tool(
             )
             graph_ev = retrieve_graph_evidence(
                 graph, embeddings, query, user_level=user_level, cache=cache,
+                retrieved_docs=docs,
             )
             return build_retrieval_payload(query, categories, docs, graph_ev)
         docs = retrieve_documents(store, query, category=categories, k=5,

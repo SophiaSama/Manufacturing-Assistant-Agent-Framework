@@ -121,7 +121,8 @@ def evaluate_entity_extraction(
 
     negative_hits = 0
     for neg in negatives:
-        if index.get(canonical_id(neg.get("id", ""))) is not None:
+        neg_id = canonical_id(neg.get("id", ""))
+        if neg_id and graph.has_node(neg_id):
             negative_hits += 1
 
     extracted_count = graph.number_of_nodes()
