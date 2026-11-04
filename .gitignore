@@ -34,7 +34,6 @@ reports/
 # Evaluation ground truth (excluded from agent corpus, not committed)
 # ground-truth.md is intentionally NOT committed to prevent leakage
 TEST_REVIEW_SUMMARY.md
-docs/
 tests/labs/
 
 #Cache
