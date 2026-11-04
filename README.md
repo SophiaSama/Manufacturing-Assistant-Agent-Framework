@@ -1,6 +1,23 @@
 # Enterprise Agentic Decision Support Framework
 ### Flagship Benchmark: Apex Automotive — Northgate Assembly Plant (NGA)
 
+<p align="left">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11" /></a>
+  <a href="https://langchain-ai.github.io/langgraph/"><img src="https://img.shields.io/badge/LangGraph-0.2.53-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" alt="LangGraph" /></a>
+  <a href="https://python.langchain.com/"><img src="https://img.shields.io/badge/LangChain-0.3.7-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white" alt="LangChain" /></a>
+  <a href="https://typesafe.ai/"><img src="https://img.shields.io/badge/TypeSafe_AI-Jev_System_One-6366F1?style=for-the-badge&logo=lightning&logoColor=white" alt="TypeSafe AI Jev" /></a>
+  <a href="https://pypi.org/project/headroom-ai/"><img src="https://img.shields.io/badge/Headroom_AI-Context_&_Memory-0EA5E9?style=for-the-badge&logo=databricks&logoColor=white" alt="Headroom AI" /></a>
+  <a href="https://www.trychroma.com/"><img src="https://img.shields.io/badge/ChromaDB-Vector_Store-FF6F00?style=for-the-badge&logo=databricks&logoColor=white" alt="ChromaDB" /></a>
+  <a href="https://networkx.org/"><img src="https://img.shields.io/badge/NetworkX-GraphRAG-00599C?style=for-the-badge&logo=graphql&logoColor=white" alt="NetworkX" /></a>
+  <a href="https://www.sqlite.org/"><img src="https://img.shields.io/badge/SQLite-Database_&_Cache-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite" /></a>
+  <a href="https://sqlglot.com/"><img src="https://img.shields.io/badge/SQLGlot-AST_Security-E34F26?style=for-the-badge&logo=postgresql&logoColor=white" alt="SQLGlot" /></a>
+  <a href="https://docs.confident-ai.com/"><img src="https://img.shields.io/badge/DeepEval-RAG_Evaluation-7C3AED?style=for-the-badge&logo=checkmarx&logoColor=white" alt="DeepEval" /></a>
+  <a href="https://opentelemetry.io/"><img src="https://img.shields.io/badge/OpenTelemetry-Tracing-F5A800?style=for-the-badge&logo=opentelemetry&logoColor=black" alt="OpenTelemetry" /></a>
+  <a href="https://docs.astral.sh/uv/"><img src="https://img.shields.io/badge/uv-Package_Manager-DE5FE9?style=for-the-badge&logo=astral&logoColor=white" alt="uv" /></a>
+  <a href="https://docs.astral.sh/ruff/"><img src="https://img.shields.io/badge/Ruff-Linter-D7FF64?style=for-the-badge&logo=ruff&logoColor=black" alt="Ruff" /></a>
+  <a href="https://docs.pytest.org/"><img src="https://img.shields.io/badge/pytest-Test_Suite-0A9EDC?style=for-the-badge&logo=pytest&logoColor=white" alt="pytest" /></a>
+</p>
+
 > **⚠️ Disclaimer — Synthetic Evaluation Corpus**:  
 > All data in this repository — including **Apex Automotive**, the **Northgate Assembly Plant (NGA)**, vehicle models (*Aurora AU-2025*, *Solstice SO-2025*), Standard Operating Procedures (SOPs), machine specifications, fault codes, non-conformance records, torque logs, SQLite database tables (`nga.db`), and the banking demonstration data (`banking.db`) — is **entirely synthetic and fictional**. It has been generated strictly for research, testing, and AI decision-support benchmark evaluation purposes.
 
@@ -33,15 +50,17 @@ The repository contains:
 
 | Technology | Selected Component | Why This Stack Was Chosen |
 |---|---|---|
-| **Orchestration** | **LangGraph** | Provides a state-machine framework defining deterministic, predictable paths (`prepare` → `agent` ⇆ `tools` → `synthesis` → `hitl`). Guarantees that governance, circuit breakers, and safety verification execute in order. |
-| **Vector DB** | **ChromaDB** | Lightweight, persistent vector store supporting exact metadata filtering. Enforces path-derived RBAC constraints (`level_rank <= user_level`) directly during similarity search. |
-| **Knowledge Graph** | **NetworkX** | Python-native graph library persisting extracted manufacturing entities and relations (e.g., `Machine`, `FaultCode`, `RecallCriteria`) for GraphRAG multi-hop BFS reasoning. |
-| **System One Reranker** | **TypeSafe AI Jev** (`typesafe-ai/jev`) | Sub-30ms System One `Choice` reranker evaluating candidate passage relevance against query context in a single forward pass, replacing heavy GPU cross-encoders with zero GPU infrastructure. |
-| **Context Compression & Memory** | **Headroom AI** (`headroom-ai`) | Session-isolated context compression for RAG tool outputs and multi-turn message history with deterministic SHA-256 hash markers, 100% byte-for-byte uncompressed evidence recovery, and episodic plant incident memory. |
-| **Security & SQL Engine** | **SQLGlot** | Strict SQL AST parser and validator. Validates generated text-to-SQL commands prior to execution, restricting queries strictly to single, read-only `SELECT` statements matching the live database schema. |
-| **Fast Evaluation Judge** | **TypeSafe AI Jev** | System One non-generative decision model using Reinforcement Learning for Calibrated Decisions (RLCD). Evaluates groundedness and correctness in sub-50ms with zero token generation cost. |
-| **Package Manager** | **uv / hatchling** | Modern, reproducible Python package installer and workspace manager with locked dependencies. |
-| **Testing** | **pytest** | Full automated test suite covering unit APIs, integration benchmarks, stress tests, and deterministic grounding checks. |
+| **Orchestration** | ![LangGraph](https://img.shields.io/badge/LangGraph-1C3C3C?style=flat-square&logo=langchain&logoColor=white) **LangGraph** | Provides a state-machine framework defining deterministic, predictable paths (`prepare` → `agent` ⇆ `tools` → `synthesis` → `hitl`). Guarantees that governance, circuit breakers, and safety verification execute in order. |
+| **Vector DB** | ![ChromaDB](https://img.shields.io/badge/ChromaDB-FF6F00?style=flat-square&logo=databricks&logoColor=white) **ChromaDB** | Lightweight, persistent vector store supporting exact metadata filtering. Enforces path-derived RBAC constraints (`level_rank <= user_level`) directly during similarity search. |
+| **Knowledge Graph** | ![NetworkX](https://img.shields.io/badge/NetworkX-00599C?style=flat-square&logo=graphql&logoColor=white) **NetworkX** | Python-native graph library persisting extracted manufacturing entities and relations (e.g., `Machine`, `FaultCode`, `RecallCriteria`) for GraphRAG multi-hop BFS reasoning. |
+| **System One Reranker** | ![TypeSafe AI Jev](https://img.shields.io/badge/TypeSafe_AI-Jev-6366F1?style=flat-square&logo=lightning&logoColor=white) **TypeSafe AI Jev** (`typesafe-ai/jev`) | Sub-30ms System One `Choice` reranker evaluating candidate passage relevance against query context in a single forward pass, replacing heavy GPU cross-encoders with zero GPU infrastructure. |
+| **Context Compression & Memory** | ![Headroom AI](https://img.shields.io/badge/Headroom_AI-0EA5E9?style=flat-square&logo=databricks&logoColor=white) **Headroom AI** (`headroom-ai`) | Session-isolated context compression for RAG tool outputs and multi-turn message history with deterministic SHA-256 hash markers, 100% byte-for-byte uncompressed evidence recovery, and episodic plant incident memory. |
+| **Security & SQL Engine** | ![SQLGlot](https://img.shields.io/badge/SQLGlot-E34F26?style=flat-square&logo=postgresql&logoColor=white) ![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white) **SQLGlot + SQLite** | Strict SQL AST parser and validator. Validates generated text-to-SQL commands prior to execution, restricting queries strictly to single, read-only `SELECT` statements matching the live database schema. |
+| **Fast Evaluation Judge** | ![TypeSafe AI Jev](https://img.shields.io/badge/TypeSafe_AI-Jev-6366F1?style=flat-square&logo=lightning&logoColor=white) **TypeSafe AI Jev** (`jev-1.13.0`) | System One non-generative decision model using Reinforcement Learning for Calibrated Decisions (RLCD). Evaluates groundedness and correctness in sub-50ms with zero token generation cost. |
+| **RAG Evaluation** | ![DeepEval](https://img.shields.io/badge/DeepEval-7C3AED?style=flat-square&logo=checkmarx&logoColor=white) **DeepEval** (`deepeval`) | Standardized RAG evaluation harness measuring `FaithfulnessMetric`, `AnswerRelevancyMetric`, `ContextualPrecisionMetric`, `ContextualRecallMetric`, and custom `JevEval` rubrics across `LLMTestCase` and `ToolCall` artifacts. |
+| **Observability & Tracing** | ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-F5A800?style=flat-square&logo=opentelemetry&logoColor=black) **OpenTelemetry** | Standardized distributed tracing across LangGraph nodes, Jev System One calls, RAG retrievals, and DeepEval evaluations with Arize Phoenix / Jaeger compatibility. |
+| **Package Manager & Linter** | ![uv](https://img.shields.io/badge/uv-DE5FE9?style=flat-square&logo=astral&logoColor=white) ![Ruff](https://img.shields.io/badge/Ruff-D7FF64?style=flat-square&logo=ruff&logoColor=black) **uv / hatchling / Ruff** | Modern, reproducible Python package installer, workspace manager, and ultra-fast linter with locked dependencies. |
+| **Testing** | ![pytest](https://img.shields.io/badge/pytest-0A9EDC?style=flat-square&logo=pytest&logoColor=white) **pytest** | Full automated test suite covering unit APIs, integration benchmarks, stress tests, and deterministic grounding checks. |
 
 ---
 
